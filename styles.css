@@ -1,0 +1,371 @@
+/* ========================================
+   DESIGN TOKENS / THEME VARIABLES
+   ======================================== */
+:root {
+    /* Colors */
+    --color-primary-bg: #ffffff;
+    --color-secondary-bg: #f8f8f8;
+    --color-border: #d0d0d0;
+    --color-border-subtle: #e8e8e8;
+    --color-text: #333333;
+    --color-text-muted: #666666;
+    
+    /* Button colors */
+    --color-save-btn: #28a745;
+    --color-save-btn-hover: #218838;
+    --color-cancel-btn: #dc3545;
+    --color-cancel-btn-hover: #c82333;
+    --color-discard-btn: #6c757d;
+    --color-discard-btn-hover: #5a6268;
+    
+    /* Notification colors */
+    --color-notification-bg: #fff5f5;
+    --color-notification-border: #dc3545;
+    --color-notification-text: #721c24;
+    
+    /* Hover states */
+    --color-cell-hover-outline: #b0b0b0;
+    --color-header-hover: #e0e0e0;
+    
+    /* Spacing */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 24px;
+    
+    /* Typography */
+    --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-size-base: 14px;
+    --font-size-sm: 12px;
+    --font-size-lg: 16px;
+    --font-weight-normal: 400;
+    --font-weight-bold: 600;
+    
+    /* Borders */
+    --border-radius: 4px;
+    --border-width: 1px;
+    
+    /* Transitions */
+    --transition-speed: 0.2s;
+    
+    /* Table */
+    --table-cell-padding: var(--spacing-md);
+    --table-header-padding: var(--spacing-md);
+}
+
+/* ========================================
+   RESET & BASE STYLES
+   ======================================== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-family);
+    font-size: var(--font-size-base);
+    color: var(--color-text);
+    background-color: var(--color-secondary-bg);
+    line-height: 1.5;
+}
+
+/* ========================================
+   CONTAINER
+   ======================================== */
+.container {
+    max-width: 100%;
+    margin: var(--spacing-xl) auto;
+    padding: 0 var(--spacing-lg);
+}
+
+/* ========================================
+   TOOLBAR
+   ======================================== */
+.toolbar {
+    background-color: transparent;
+    border: var(--border-width) solid var(--color-border-subtle);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+}
+
+.toolbar-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-lg);
+}
+
+/* Search Container */
+.search-container {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    flex: 0 0 50%;
+}
+
+.search-label {
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    white-space: nowrap;
+}
+
+.search-input {
+    flex: 1;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--border-radius);
+    font-size: var(--font-size-base);
+    font-family: var(--font-family);
+    outline: none;
+    transition: border-color var(--transition-speed);
+}
+
+.search-input:focus {
+    border-color: var(--color-text-muted);
+}
+
+.clear-search-btn {
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--color-primary-bg);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-size: var(--font-size-base);
+    color: var(--color-text-muted);
+    transition: all var(--transition-speed);
+}
+
+.clear-search-btn:hover {
+    background-color: var(--color-secondary-bg);
+    color: var(--color-text);
+}
+
+/* Discard Changes Button */
+.discard-changes-btn {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    background-color: var(--color-discard-btn);
+    color: var(--color-primary-bg);
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-bold);
+    transition: background-color var(--transition-speed);
+    white-space: nowrap;
+}
+
+.discard-changes-btn:hover {
+    background-color: var(--color-discard-btn-hover);
+}
+
+/* Unsaved Notification */
+.unsaved-notification {
+    margin-top: var(--spacing-lg);
+    padding: var(--spacing-md);
+    background-color: var(--color-notification-bg);
+    border: 2px solid var(--color-notification-border);
+    border-radius: var(--border-radius);
+    color: var(--color-notification-text);
+    font-weight: var(--font-weight-bold);
+    text-align: center;
+}
+
+/* ========================================
+   TABLE
+   ======================================== */
+.table-container {
+    overflow-x: auto;
+    background-color: var(--color-primary-bg);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--border-radius);
+    padding-right: 80px; /* Space for edit buttons */
+    position: relative;
+}
+
+.language-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+}
+
+/* Table Header */
+.language-table thead {
+    background-color: var(--color-secondary-bg);
+    border-bottom: 2px solid var(--color-border);
+}
+
+.language-table th {
+    padding: var(--table-header-padding);
+    text-align: left;
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    border-right: var(--border-width) solid var(--color-border-subtle);
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color var(--transition-speed);
+}
+
+.language-table th:last-child {
+    border-right: none;
+}
+
+.language-table th:hover {
+    background-color: var(--color-header-hover);
+}
+
+.language-table th.sortable {
+    cursor: pointer;
+}
+
+.language-table th.keys-column {
+    cursor: default;
+}
+
+.language-table th.keys-column:hover {
+    background-color: var(--color-secondary-bg);
+}
+
+/* Sort indicator */
+.sort-indicator {
+    margin-right: var(--spacing-xs);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+/* Column collapse */
+.language-table th.collapsed {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    padding: var(--spacing-sm) var(--spacing-xs);
+    width: 35px;
+    min-width: 35px;
+    max-width: 35px;
+    white-space: nowrap;
+}
+
+.language-table th.value-column {
+    cursor: pointer;
+}
+
+.collapse-indicator {
+    margin-left: var(--spacing-xs);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+/* Table Body */
+.language-table tbody tr {
+    border-bottom: var(--border-width) solid var(--color-border-subtle);
+}
+
+.language-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.language-table tbody tr:nth-child(even) {
+    background-color: var(--color-secondary-bg);
+}
+
+.language-table td {
+    padding: var(--table-cell-padding);
+    border-right: var(--border-width) solid var(--color-border-subtle);
+    vertical-align: top;
+    word-wrap: break-word;
+}
+
+.language-table td:last-child {
+    border-right: none;
+}
+
+/* Keys column - not editable */
+.language-table td.keys-cell {
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-muted);
+}
+
+/* Value cells - editable */
+.language-table td.value-cell {
+    position: relative;
+    cursor: pointer;
+    transition: outline var(--transition-speed);
+}
+
+.language-table td.value-cell:hover {
+    outline: 1px solid var(--color-cell-hover-outline);
+    outline-offset: -1px;
+}
+
+.language-table td.value-cell.editing {
+    outline: 2px solid var(--color-text-muted);
+    outline-offset: -2px;
+}
+
+.language-table td.collapsed-cell {
+    display: none;
+}
+
+/* Edit mode */
+.edit-input {
+    width: 100%;
+    min-height: 60px;
+    padding: var(--spacing-sm);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--border-radius);
+    font-size: var(--font-size-base);
+    font-family: var(--font-family);
+    resize: vertical;
+    outline: none;
+}
+
+.edit-input:focus {
+    border-color: var(--color-text-muted);
+}
+
+/* Edit buttons overlay */
+.edit-buttons {
+    position: absolute;
+    right: -70px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: var(--spacing-xs);
+    z-index: 10;
+}
+
+.edit-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-size: var(--font-size-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-speed);
+}
+
+.save-btn {
+    background-color: var(--color-save-btn);
+    color: var(--color-primary-bg);
+}
+
+.save-btn:hover {
+    background-color: var(--color-save-btn-hover);
+}
+
+.cancel-btn {
+    background-color: var(--color-primary-bg);
+    color: var(--color-cancel-btn);
+    border: 2px solid var(--color-cancel-btn);
+}
+
+.cancel-btn:hover {
+    background-color: var(--color-cancel-btn);
+    color: var(--color-primary-bg);
+}
+

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Language Table</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="toolbar">
+            <div class="toolbar-controls">
+                <div class="search-container">
+                    <label for="search-input" class="search-label">Search</label>
+                    <input type="text" id="search-input" class="search-input" placeholder="Search keys or values...">
+                    <button id="clear-search-btn" class="clear-search-btn" style="display: none;">✖</button>
+                </div>
+                <button id="discard-changes-btn" class="discard-changes-btn" style="display: none;">Discard changes</button>
+            </div>
+            <div id="unsaved-notification" class="unsaved-notification" style="display: none;">
+                You have unsaved changes.
+            </div>
+        </div>
+        <div class="table-container">
+            <table id="language-table" class="language-table">
+                <thead id="table-head">
+                    <!-- Table headers will be generated dynamically -->
+                </thead>
+                <tbody id="table-body">
+                    <!-- Table rows will be generated dynamically -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Data source provided by server-side -->
+    <script>
+        // ============================================================
+        // PRODUCTION USAGE:
+        // In your ASPX page, replace the fetch() code below with:
+        //
+        // var originalDataSource = <%= YourServerSideJsonData %>;
+        //
+        // Then the language-table.js will automatically initialize
+        // when the page loads.
+        // ============================================================
+
+        // FOR TESTING ONLY - Load from sample-genius.json
+        var originalDataSource = [];
+
+        fetch('sample-genius.json')
+            .then(response => response.json())
+            .then(data => {
+                originalDataSource = data;
+                // Trigger initialization after data is loaded
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', initApp);
+                } else {
+                    initApp();
+                }
+            })
+            .catch(error => {
+                console.error('Error loading data:', error);
+            });
+
+        function initApp() {
+            if (typeof initializeData === 'function') {
+                initializeData();
+                initializeEventListeners();
+                renderTable();
+            }
+        }
+    </script>
+
+    <script src="language-table.js"></script>
+</body>
+</html>
+
