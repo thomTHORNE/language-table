@@ -31,6 +31,26 @@
                 </tbody>
             </table>
         </div>
+        <div class="pagination-container" id="pagination-container">
+            <div class="pagination-info" id="pagination-info">
+                <!-- Showing X-Y of Z entries -->
+            </div>
+            <div class="pagination-controls">
+                <button class="pagination-btn pagination-prev" id="pagination-prev" disabled>Previous</button>
+                <div class="pagination-pages" id="pagination-pages">
+                    <!-- Page buttons rendered dynamically -->
+                </div>
+                <button class="pagination-btn pagination-next" id="pagination-next">Next</button>
+            </div>
+            <div class="pagination-rows-per-page">
+                <label for="rows-per-page">Rows per page:</label>
+                <select id="rows-per-page" class="rows-per-page-select">
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+        </div>
     </div>
 
     <!-- ============================================================
@@ -258,16 +278,5 @@
     </script>
 
     <script src="language-table.js"></script>
-    
-    <script>
-        // Initialize the application when DOM is ready
-        document.addEventListener('DOMContentLoaded', function() {
-            if (typeof initializeData === 'function') {
-                initializeData();
-                initializeEventListeners();
-                renderTable();
-            }
-        });
-    </script>
 </body>
 </html>
