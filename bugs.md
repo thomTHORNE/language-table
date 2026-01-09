@@ -1,2 +1,0 @@
-1. Bug: When user clicks outside the cell AND on another cell, the cell that is currently in edit mode correctly assumes display mode, but clicking any cell afterwards will not enter edit mode. 
-Expectation: Clicking away from the cell AND on another cell, the cell that is currently in edit mode should switch into display mode and allow user to enter into edit mode for any other cell afterwards.
