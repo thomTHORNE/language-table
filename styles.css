@@ -333,7 +333,13 @@ body {
 }
 
 .language-table td.collapsed-cell {
-    display: none;
+    width: 35px;
+    min-width: 35px;
+    max-width: 35px;
+    overflow: hidden;
+    padding: var(--spacing-sm) var(--spacing-xs);
+    font-size: 0;
+    color: transparent;
 }
 
 /* Edit mode */
