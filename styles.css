@@ -251,12 +251,9 @@ body {
 
 /* Column collapse */
 .language-table th.collapsed {
-    writing-mode: vertical-rl;
-    transform: rotate(180deg);
     padding: var(--spacing-sm) var(--spacing-xs);
     width: 35px;
     min-width: 35px;
-    max-width: 35px;
     white-space: nowrap;
 }
 

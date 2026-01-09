@@ -52,7 +52,17 @@
             </div>
         </div>
     </div>
-    
+        <!-- Hidden form for submitting translations to the server -->
+        <form id="translations-form"
+              name="translationsForm"
+              action="/translations/save"
+              method="post"
+              accept-charset="UTF-8"
+              style="display: none;">
+            <input type="hidden" id="translations-json" name="translationsJson" value="">
+        </form>
+
+
     <script>
         // 1. REPLACE THIS DATA WITH YOUR SERVER-SIDE DATA:
         var originalDataSource = [
@@ -235,14 +245,28 @@
       }
    }
 ];
-    
-        // 2. To access modified data for form submission, use the global variable: modifiedDataSource
-        // Example:
-        //     function submitTranslations() {
-        //         var jsonData = JSON.stringify(modifiedDataSource);
-        //         document.getElementById('hiddenField').value = jsonData;
-        //         // Then submit your form
-        //     }
+
+        // 2. Submit modified translations to your server via a hidden form.
+        //    Call submitTranslations() from your own "Save" button or other UI control.
+        function submitTranslations() {
+            if (typeof modifiedDataSource === 'undefined') {
+                console.error('modifiedDataSource is not available.');
+                return;
+            }
+
+            var form = document.getElementById('translations-form');
+            var jsonField = document.getElementById('translations-json');
+
+            if (!form || !jsonField) {
+                console.error('Translations form or hidden JSON field is missing from the DOM.');
+                return;
+            }
+
+            var jsonData = JSON.stringify(modifiedDataSource);
+            jsonField.value = jsonData;
+
+            form.submit();
+        }
     </script>
 
     <script src="language-table.js"></script>
