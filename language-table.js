@@ -91,31 +91,37 @@ function renderTableHeader() {
             langHeader.classList.add('collapsed');
         }
 
-        // Sort indicator
+        // Sort indicator - clickable for sorting
         const sortIndicator = document.createElement('span');
         sortIndicator.className = 'sort-indicator';
         const sortDirection = state.sortState[index];
         if (sortDirection === 'asc') {
-            sortIndicator.textContent = '▲ ';
+            sortIndicator.textContent = '▲';
         } else if (sortDirection === 'desc') {
-            sortIndicator.textContent = '▼ ';
+            sortIndicator.textContent = '▼';
         } else {
-            sortIndicator.textContent = '';
+            sortIndicator.textContent = '⇅';
         }
+        sortIndicator.addEventListener('click', (e) => {
+            e.stopPropagation();
+            cycleSortState(index);
+        });
 
         // Column title
         const title = lang.LanguageTwoLetter.toUpperCase();
 
-        // Collapse indicator
+        // Collapse indicator - clickable for collapsing
         const collapseIndicator = document.createElement('span');
         collapseIndicator.className = 'collapse-indicator';
-        collapseIndicator.textContent = isCollapsed ? ' ▶' : ' ◀';
+        collapseIndicator.textContent = isCollapsed ? '▶' : '◀';
+        collapseIndicator.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleColumnCollapse(index);
+        });
 
         langHeader.appendChild(sortIndicator);
-        langHeader.appendChild(document.createTextNode(title));
+        langHeader.appendChild(document.createTextNode(' ' + title + ' '));
         langHeader.appendChild(collapseIndicator);
-
-        langHeader.addEventListener('click', (e) => handleHeaderClick(e, index));
 
         headerRow.appendChild(langHeader);
     });
@@ -222,19 +228,26 @@ function getTextFromHTML(html) {
 
 function handleCellClick(e, key, langIndex, currentValue) {
     e.stopPropagation();
-    
+
     const cell = e.currentTarget;
-    
-    // Exit any existing edit mode
-    if (state.currentEditCell && state.currentEditCell !== cell) {
-        exitEditMode(true); // discard changes
-    }
-    
+
     // Don't re-enter edit mode if already editing this cell
     if (state.currentEditCell === cell) {
         return;
     }
-    
+
+    // Exit any existing edit mode
+    if (state.currentEditCell) {
+        exitEditMode(true); // discard changes - this will re-render the table
+
+        // After re-render, find the new cell element in the DOM
+        const newCell = document.querySelector(`td.value-cell[data-key="${key}"][data-lang-index="${langIndex}"]`);
+        if (newCell) {
+            enterEditMode(newCell, key, langIndex, currentValue);
+        }
+        return;
+    }
+
     enterEditMode(cell, key, langIndex, currentValue);
 }
 
@@ -398,27 +411,6 @@ function getSearchResults() {
 // SORTING FUNCTIONALITY
 // ========================================
 
-function handleHeaderClick(e, columnIndex) {
-    e.stopPropagation();
-    
-    const target = e.target;
-    const isCollapseIndicator = target.classList.contains('collapse-indicator') || 
-                                 target.textContent.includes('◀') || 
-                                 target.textContent.includes('▶');
-    
-    // Check if click is on collapse indicator or header itself
-    const clickX = e.offsetX;
-    const headerWidth = e.currentTarget.offsetWidth;
-    
-    // If clicked on right side (collapse area) or it's a collapsed column, toggle collapse
-    if (isCollapseIndicator || clickX > headerWidth - 30 || e.currentTarget.classList.contains('collapsed')) {
-        toggleColumnCollapse(columnIndex);
-    } else {
-        // Otherwise, handle sorting
-        cycleSortState(columnIndex);
-    }
-}
-
 function toggleColumnCollapse(columnIndex) {
     if (state.collapsedColumns.has(columnIndex)) {
         state.collapsedColumns.delete(columnIndex);
@@ -473,8 +465,14 @@ function updateUI() {
     discardBtn.style.display = state.hasUnsavedChanges ? 'block' : 'none';
 }
 
-function handleDocumentClick() {
-    // Per requirements: clicking outside does nothing
-    // User must explicitly save or cancel
+function handleDocumentClick(e) {
+    // When clicking outside a cell that is in edit mode,
+    // exit edit mode and discard changes to allow future cell editing
+    if (state.currentEditCell) {
+        // Check if the click was outside the current editing cell
+        if (!state.currentEditCell.contains(e.target)) {
+            exitEditMode(true);
+        }
+    }
 }
 

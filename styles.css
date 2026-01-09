@@ -228,11 +228,25 @@ body {
     background-color: var(--color-secondary-bg);
 }
 
-/* Sort indicator */
+/* Sort indicator - clickable */
 .sort-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    min-height: 24px;
+    padding: var(--spacing-xs);
     margin-right: var(--spacing-xs);
     font-size: var(--font-size-sm);
     color: var(--color-text-muted);
+    cursor: pointer;
+    border-radius: var(--border-radius);
+    transition: background-color var(--transition-speed), color var(--transition-speed);
+}
+
+.sort-indicator:hover {
+    background-color: var(--color-border);
+    color: var(--color-text);
 }
 
 /* Column collapse */
@@ -247,13 +261,28 @@ body {
 }
 
 .language-table th.value-column {
-    cursor: pointer;
+    cursor: default;
 }
 
+/* Collapse indicator - clickable */
 .collapse-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    min-height: 24px;
+    padding: var(--spacing-xs);
     margin-left: var(--spacing-xs);
     font-size: var(--font-size-sm);
     color: var(--color-text-muted);
+    cursor: pointer;
+    border-radius: var(--border-radius);
+    transition: background-color var(--transition-speed), color var(--transition-speed);
+}
+
+.collapse-indicator:hover {
+    background-color: var(--color-border);
+    color: var(--color-text);
 }
 
 /* Table Body */
