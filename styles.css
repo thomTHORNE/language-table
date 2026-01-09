@@ -181,7 +181,6 @@ body {
     background-color: var(--color-primary-bg);
     border: var(--border-width) solid var(--color-border);
     border-radius: var(--border-radius);
-    padding-right: 80px; /* Space for edit buttons */
     position: relative;
 }
 
@@ -327,13 +326,10 @@ body {
 
 /* Edit buttons overlay */
 .edit-buttons {
-    position: absolute;
-    right: -70px;
-    top: 50%;
-    transform: translateY(-50%);
+    position: relative;
     display: flex;
     gap: var(--spacing-xs);
-    z-index: 10;
+    padding-top: var(--spacing-sm);
 }
 
 .edit-btn {

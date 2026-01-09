@@ -1,7 +1,5 @@
 # Language Table
 
-A vanilla JavaScript application for managing multilingual translation tables with inline editing, search, sorting, and column collapse features.
-
 ## Features
 
 - **Inline Editing**: Click any value cell to edit translations with save/cancel buttons
@@ -11,12 +9,19 @@ A vanilla JavaScript application for managing multilingual translation tables wi
 - **Change Tracking**: Visual notification when unsaved changes exist
 - **Discard Changes**: Reset all modifications back to original data
 
+## Behavior Notes
+
+- **Edit Mode**: Only one cell can be in edit mode at a time. Starting to edit another cell will discard changes in the current cell.
+- **Search**: Clears any active sorting. Search uses case-insensitive regex matching.
+- **Sorting**: Sorts by rendered text content (HTML tags are stripped for comparison).
+- **Column Collapse**: Does not persist across page reloads. Collapsed state is visual only.
+- **Unsaved Changes**: Notification appears immediately after saving any cell edit.
+
 ## Files
 
 - `index.html` - Main HTML structure
 - `styles.css` - Styling with design tokens for easy theming
-- `language-table.js` - Core application logic
-- `sample-genius.json` - Sample data for testing
+- `language-table.js` - Application logic
 
 ## Integration with ASPX Web Forms
 
@@ -140,36 +145,3 @@ All visual styling can be customized by modifying CSS custom properties at the t
     /* ... and more */
 }
 ```
-
-## Browser Support
-
-- Modern browsers (Chrome, Firefox, Safari, Edge)
-- ES6+ JavaScript features are used
-- No external dependencies or frameworks required
-
-## Testing Locally
-
-To test the application locally:
-
-1. Start the included Node.js server:
-   ```bash
-   node server.js
-   ```
-
-2. Open your browser to:
-   ```
-   http://localhost:8000
-   ```
-
-## Behavior Notes
-
-- **Edit Mode**: Only one cell can be in edit mode at a time. Starting to edit another cell will discard changes in the current cell.
-- **Search**: Clears any active sorting. Search uses case-insensitive regex matching.
-- **Sorting**: Sorts by rendered text content (HTML tags are stripped for comparison).
-- **Column Collapse**: Does not persist across page reloads. Collapsed state is visual only.
-- **Unsaved Changes**: Notification appears immediately after saving any cell edit.
-
-## License
-
-This is a custom implementation for ASPX Web Forms integration.
-
