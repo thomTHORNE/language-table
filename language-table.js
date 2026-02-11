@@ -257,10 +257,23 @@ function getTextFromHTML(html) {
 // EDIT MODE (Modal + Quill)
 // ========================================
 
+/**
+ * Note: Quill 2.x does not easily support custom attribute preservation through Parchment Blots.
+ * Instead, we handle attribute preservation at the save/load level using DOM manipulation.
+ * This is a more reliable approach that doesn't interfere with Quill's internal document model.
+ */
+function registerCustomQuillFormats() {
+    // No custom formats needed - we handle attributes at save/load time
+    console.log('Using DOM-based attribute preservation (Quill 2.x compatible)');
+}
+
 function initializeQuillEditor() {
     if (state.quillEditor) {
         return;
     }
+
+    // Register custom formats before creating the editor
+    registerCustomQuillFormats();
 
     state.quillEditor = new Quill('#quill-editor', {
         modules: {
@@ -331,13 +344,28 @@ function toggleCodeView() {
     if (!state.isCodeViewActive) {
         // Switch to Code View
         // Get HTML content from Quill
-        const htmlContent = state.quillEditor.getSemanticHTML();
+        let htmlContent = state.quillEditor.getSemanticHTML();
+
+        // Restore original tag names and attributes that Quill stripped,
+        // so the user sees the preserved HTML structure in Code View
+        if (state.currentEditContext) {
+            const { originalAttributes } = state.currentEditContext;
+            if (hasPreservableStructure(originalAttributes)) {
+                htmlContent = reapplyHTMLAttributes(htmlContent, originalAttributes);
+            }
+        }
 
         // Decode HTML entities for better readability
         const decodedHTML = decodeHTMLEntities(htmlContent);
 
         // Display decoded HTML in textarea
         codeViewTextarea.value = decodedHTML;
+
+        // Store the initial Code View content so we can detect changes on save.
+        // This is what the user sees when they first switch to Code View.
+        if (state.currentEditContext) {
+            state.currentEditContext.codeViewInitialHTML = decodedHTML;
+        }
 
         // Hide Quill editor, show code view
         quillEditorContainer.style.display = 'none';
@@ -353,6 +381,14 @@ function toggleCodeView() {
         // Switch back to Design View
         // Get the edited HTML from textarea
         const editedHTML = codeViewTextarea.value;
+
+        // Re-extract HTML structure from the Code View content so that
+        // subsequent Design View formatting preserves the updated tags and attributes.
+        // This ensures consistency when the user edits HTML in Code View and then
+        // applies formatting (bold, italic, etc.) in Design View.
+        if (state.currentEditContext && htmlContainsTags(editedHTML)) {
+            state.currentEditContext.originalAttributes = extractHTMLAttributes(editedHTML);
+        }
 
         // Update Quill editor with the edited HTML
         // Clear existing content first
@@ -387,6 +423,209 @@ function toggleCodeView() {
 }
 
 /**
+ * Extract HTML element structure (tag names and attributes) from an HTML string.
+ * Returns an ordered list of element descriptors for both block-level and inline elements,
+ * capturing the original tag name, attributes (id, class, data-*), and text content
+ * for positional matching when reapplying to Quill's output.
+ *
+ * @param {string} html - HTML string to parse
+ * @returns {Object} - Object with `blockElements` and `inlineElements` arrays
+ */
+function extractHTMLAttributes(html) {
+    if (!html || typeof html !== 'string' || html.trim() === '') {
+        return { blockElements: [], inlineElements: [] };
+    }
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    const blockElements = [];
+    const inlineElements = [];
+
+    // Block-level tags that Quill typically converts to <p>
+    const blockTags = new Set([
+        'p', 'div', 'section', 'article', 'header', 'footer', 'main',
+        'aside', 'nav', 'figure', 'figcaption', 'address', 'details',
+        'summary', 'blockquote', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'
+    ]);
+
+    // Inline tags that Quill may strip or convert
+    const inlineTags = new Set(['span', 'a', 'abbr', 'cite', 'code', 'mark', 'time']);
+
+    /**
+     * Extract preservable attributes (id, class, data-*) from an element.
+     * @param {Element} element
+     * @returns {Object} - key/value pairs of preserved attributes
+     */
+    function getPreservableAttrs(element) {
+        const attrs = {};
+        if (element.hasAttribute('id')) {
+            attrs.id = element.getAttribute('id');
+        }
+        if (element.hasAttribute('class')) {
+            attrs.class = element.getAttribute('class');
+        }
+        Array.from(element.attributes).forEach(attr => {
+            if (attr.name.startsWith('data-')) {
+                attrs[attr.name] = attr.value;
+            }
+        });
+        return attrs;
+    }
+
+    // Walk direct children of body for block-level elements (preserves document order)
+    const topLevelChildren = doc.body.children;
+    for (let i = 0; i < topLevelChildren.length; i++) {
+        const element = topLevelChildren[i];
+        const tagName = element.tagName.toLowerCase();
+
+        if (blockTags.has(tagName)) {
+            const attrs = getPreservableAttrs(element);
+            const hasAttrsToPreserve = Object.keys(attrs).length > 0;
+            const isNonDefaultTag = tagName !== 'p';
+
+            // Store if there are attributes to preserve OR the tag is non-default
+            if (hasAttrsToPreserve || isNonDefaultTag) {
+                blockElements.push({
+                    originalTag: tagName,
+                    attrs: attrs,
+                    textContent: element.textContent.trim()
+                });
+            } else {
+                // Still push a placeholder to maintain positional alignment
+                blockElements.push(null);
+            }
+        }
+    }
+
+    // Walk all elements for inline elements that have preservable attributes or non-default tags
+    const allElements = doc.body.querySelectorAll('*');
+    allElements.forEach(element => {
+        const tagName = element.tagName.toLowerCase();
+        if (inlineTags.has(tagName)) {
+            const attrs = getPreservableAttrs(element);
+            if (Object.keys(attrs).length > 0 || tagName !== 'span') {
+                inlineElements.push({
+                    originalTag: tagName,
+                    attrs: attrs,
+                    textContent: element.textContent.trim(),
+                    parentTextContent: element.parentElement
+                        ? element.parentElement.textContent.trim()
+                        : ''
+                });
+            }
+        }
+    });
+
+    return { blockElements, inlineElements };
+}
+
+/**
+ * Reapply original HTML tag names and attributes to Quill's formatted HTML output.
+ * Quill typically converts all block elements to <p> and strips custom attributes.
+ * This function restores the original tag names and attributes by positional matching.
+ *
+ * @param {string} html - HTML string from Quill's getSemanticHTML()
+ * @param {Object} originalStructure - Structure extracted by extractHTMLAttributes()
+ * @returns {string} - HTML with original tag names and attributes restored
+ */
+function reapplyHTMLAttributes(html, originalStructure) {
+    if (!html || !originalStructure) {
+        return html;
+    }
+
+    const { blockElements, inlineElements } = originalStructure;
+    const hasBlockChanges = blockElements && blockElements.some(el => el !== null);
+    const hasInlineChanges = inlineElements && inlineElements.length > 0;
+
+    if (!hasBlockChanges && !hasInlineChanges) {
+        return html;
+    }
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // --- Restore block-level elements ---
+    if (hasBlockChanges) {
+        const quillBlocks = Array.from(doc.body.children);
+
+        for (let i = 0; i < quillBlocks.length && i < blockElements.length; i++) {
+            const original = blockElements[i];
+            if (!original) continue; // null placeholder — nothing to restore
+
+            const quillElement = quillBlocks[i];
+            const quillTag = quillElement.tagName.toLowerCase();
+
+            // Restore original tag name if it differs from Quill's output
+            if (original.originalTag !== quillTag) {
+                const newElement = doc.createElement(original.originalTag);
+
+                // Copy all existing attributes from Quill's element (e.g. style)
+                Array.from(quillElement.attributes).forEach(attr => {
+                    newElement.setAttribute(attr.name, attr.value);
+                });
+
+                // Move all child nodes to the new element
+                while (quillElement.firstChild) {
+                    newElement.appendChild(quillElement.firstChild);
+                }
+
+                // Replace in DOM
+                quillElement.parentNode.replaceChild(newElement, quillElement);
+
+                // Update reference for attribute application below
+                quillBlocks[i] = newElement;
+            }
+
+            // Reapply preserved attributes
+            const targetElement = quillBlocks[i];
+            Object.keys(original.attrs).forEach(attrName => {
+                targetElement.setAttribute(attrName, original.attrs[attrName]);
+            });
+        }
+    }
+
+    // --- Restore inline elements ---
+    if (hasInlineChanges) {
+        inlineElements.forEach(originalInline => {
+            // Find matching inline elements in Quill's output by text content
+            const candidates = doc.body.querySelectorAll('span, a, abbr, cite, code, mark, time');
+            for (const candidate of candidates) {
+                const candidateText = candidate.textContent.trim();
+                if (candidateText === originalInline.textContent) {
+                    const candidateTag = candidate.tagName.toLowerCase();
+
+                    // Restore tag name if different
+                    if (originalInline.originalTag !== candidateTag) {
+                        const newInline = doc.createElement(originalInline.originalTag);
+                        Array.from(candidate.attributes).forEach(attr => {
+                            newInline.setAttribute(attr.name, attr.value);
+                        });
+                        while (candidate.firstChild) {
+                            newInline.appendChild(candidate.firstChild);
+                        }
+                        candidate.parentNode.replaceChild(newInline, candidate);
+
+                        // Apply attributes to the new element
+                        Object.keys(originalInline.attrs).forEach(attrName => {
+                            newInline.setAttribute(attrName, originalInline.attrs[attrName]);
+                        });
+                    } else {
+                        // Same tag — just reapply attributes
+                        Object.keys(originalInline.attrs).forEach(attrName => {
+                            candidate.setAttribute(attrName, originalInline.attrs[attrName]);
+                        });
+                    }
+                    break; // matched — move to next original inline
+                }
+            }
+        });
+    }
+
+    return doc.body.innerHTML;
+}
+
+/**
  * Check if a Quill delta contains any formatting attributes.
  * This detects bold, italic, underline, strike, color, background,
  * headers, lists, links, alignment, and any other Quill formatting.
@@ -399,8 +638,14 @@ function deltaHasFormatting(delta) {
     }
     return delta.ops.some(op => {
         // Check for formatting attributes (bold, italic, color, header, list, link, etc.)
+        // Exclude custom HTML attributes (id, class, data-*) from formatting detection
         if (op.attributes && Object.keys(op.attributes).length > 0) {
-            return true;
+            const formattingAttrs = Object.keys(op.attributes).filter(attr => {
+                return !['id', 'class'].includes(attr) && !attr.startsWith('data-');
+            });
+            if (formattingAttrs.length > 0) {
+                return true;
+            }
         }
         // Check for non-text inserts (embeds like images, videos, etc.)
         if (typeof op.insert !== 'string') {
@@ -408,6 +653,36 @@ function deltaHasFormatting(delta) {
         }
         return false;
     });
+}
+
+/**
+ * Check if a string contains any HTML tags.
+ * Used to distinguish plain text from HTML content in Code View.
+ * @param {string} str - String to check
+ * @returns {boolean} - True if the string contains HTML tags
+ */
+function htmlContainsTags(str) {
+    if (!str || typeof str !== 'string') {
+        return false;
+    }
+    // Match opening or self-closing HTML tags (e.g. <p>, <br/>, <div class="x">)
+    // Excludes plain text that happens to contain < or > characters
+    return /<[a-z][a-z0-9]*(\s[^>]*)?\/?>/i.test(str);
+}
+
+/**
+ * Check if an extracted HTML structure has any preservable content
+ * (non-default tags or custom attributes).
+ * @param {Object} structure - Structure from extractHTMLAttributes()
+ * @returns {boolean} - True if there are block or inline elements to preserve
+ */
+function hasPreservableStructure(structure) {
+    if (!structure) {
+        return false;
+    }
+    const hasBlocks = structure.blockElements && structure.blockElements.some(el => el !== null);
+    const hasInlines = structure.inlineElements && structure.inlineElements.length > 0;
+    return hasBlocks || hasInlines;
 }
 
 function handleCellClick(e, key, langIndex, currentValue) {
@@ -427,7 +702,16 @@ function openEditModal(key, langIndex, currentValue) {
 
     // Store the edit context with original value for smart save logic
     const originalValue = currentValue || '';
-    state.currentEditContext = { key, langIndex, originalValue };
+
+    // Extract HTML attributes from the original value to preserve them
+    const originalAttributes = extractHTMLAttributes(originalValue);
+
+    state.currentEditContext = {
+        key,
+        langIndex,
+        originalValue,
+        originalAttributes
+    };
 
     // Set the Quill editor content
     // Use clipboard.dangerouslyPasteHTML to load HTML content
@@ -453,27 +737,53 @@ function handleModalSave() {
         return;
     }
 
-    const { key, langIndex, originalValue, originalText } = state.currentEditContext;
+    const { key, langIndex, originalValue, originalText, originalAttributes } = state.currentEditContext;
 
     let newValue;
 
-    // Check if we're in code view mode
     if (state.isCodeViewActive) {
-        // Code view: user is editing raw HTML directly, use as-is
+        // ── Code View: smart save logic for raw HTML editing ──
         const codeViewTextarea = document.getElementById('code-view-textarea');
-        newValue = codeViewTextarea.value;
+        const codeViewHTML = codeViewTextarea.value;
+
+        // Compare against what was actually displayed in the textarea when Code View opened.
+        // This accounts for the fact that the displayed HTML has already been through
+        // reapplyHTMLAttributes + decodeHTMLEntities, so it may differ from originalValue.
+        const codeViewBaseline = state.currentEditContext.codeViewInitialHTML || originalValue;
+
+        if (codeViewHTML === codeViewBaseline) {
+            // Case 1: No edits made — preserve original value exactly
+            newValue = originalValue;
+        } else if (!htmlContainsTags(codeViewHTML)) {
+            // Case 2: User replaced content with plain text (no HTML tags) — save as plain text
+            newValue = codeViewHTML;
+        } else {
+            // Case 3 & 4: Content contains HTML tags
+            // Save the HTML as-is (user is directly editing raw HTML, so respect their intent)
+            newValue = codeViewHTML;
+
+            // Also update originalAttributes in the edit context so that if the user
+            // later switches to Design View and applies formatting, the new structure
+            // from Code View will be preserved
+            state.currentEditContext.originalAttributes = extractHTMLAttributes(codeViewHTML);
+        }
     } else {
-        // Design view: apply smart save logic to avoid unnecessary HTML wrapping
+        // ── Design View: smart save logic to avoid unnecessary HTML wrapping ──
         const currentDelta = state.quillEditor.getContents();
         const currentText = state.quillEditor.getText();
         const hasFormatting = deltaHasFormatting(currentDelta);
 
         if (hasFormatting) {
-            // Case 3: User explicitly applied formatting (bold, italic, color, headers, lists, etc.)
-            // Let Quill handle the content natively with its HTML output
+            // Case 3 & 4: User explicitly applied formatting (bold, italic, color, headers, lists, etc.)
+            // Get Quill's HTML output
             newValue = state.quillEditor.getSemanticHTML();
+
+            // Case 4: If original content had HTML attributes or non-default tags, preserve them
+            if (hasPreservableStructure(originalAttributes)) {
+                newValue = reapplyHTMLAttributes(newValue, originalAttributes);
+            }
         } else if (currentText === originalText) {
-            // Case 1: No edits made (preview only) - preserve the original value exactly
+            // Case 1: No edits made (preview only) — preserve the original value exactly
             newValue = originalValue;
         } else {
             // Case 2: Text content changed but no formatting applied
