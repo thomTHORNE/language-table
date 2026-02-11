@@ -351,6 +351,24 @@ function toggleCodeView() {
         state.isCodeViewActive = true;
     } else {
         // Switch back to Design View
+        // Get the edited HTML from textarea
+        const editedHTML = codeViewTextarea.value;
+
+        // Update Quill editor with the edited HTML
+        // Clear existing content first
+        state.quillEditor.root.innerHTML = '';
+
+        // Load the edited HTML into Quill
+        if (editedHTML && editedHTML.trim() !== '') {
+            try {
+                state.quillEditor.clipboard.dangerouslyPasteHTML(0, editedHTML);
+            } catch (error) {
+                console.error('Error parsing HTML from code view:', error);
+                // If there's an error, try to set it as plain text
+                state.quillEditor.setText(editedHTML);
+            }
+        }
+
         // Hide code view, show Quill editor
         codeViewContainer.style.display = 'none';
         quillEditorContainer.style.display = 'block';
@@ -408,8 +426,17 @@ function handleModalSave() {
 
     const { key, langIndex } = state.currentEditContext;
 
-    // Get HTML content from Quill
-    const newValue = state.quillEditor.getSemanticHTML();
+    let newValue;
+
+    // Check if we're in code view mode
+    if (state.isCodeViewActive) {
+        // Get HTML content directly from the textarea
+        const codeViewTextarea = document.getElementById('code-view-textarea');
+        newValue = codeViewTextarea.value;
+    } else {
+        // Get HTML content from Quill
+        newValue = state.quillEditor.getSemanticHTML();
+    }
 
     // Update modifiedDataSource
     modifiedDataSource[langIndex].Translations[key] = newValue;
