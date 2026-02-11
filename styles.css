@@ -3,13 +3,15 @@
    ======================================== */
 :root {
     /* Colors */
+    --color-primary: #007bff;
+    --color-primary-light: #e4f1ff;
     --color-primary-bg: #ffffff;
     --color-secondary-bg: #f8f8f8;
     --color-border: #d0d0d0;
     --color-border-subtle: #e8e8e8;
     --color-text: #333333;
     --color-text-muted: #666666;
-    
+
     /* Button colors */
     --color-save-btn: #28a745;
     --color-save-btn-hover: #218838;
@@ -450,11 +452,15 @@ body {
     font-weight: unset;
     border: 1px solid var(--color-border) !important;
     border-radius: var(--border-radius);
+    padding: 3px 8px !important;
+    transition: all 0.2s ease;
 }
 
-.ql-toolbar .ql-code-view.ql-active {
-    background-color: var(--color-border-subtle);
-    color: white;
+.ql-toolbar .ql-code-view.ql-active,
+.ql-toolbar .ql-code-view[data-active="true"] {
+    background-color: var(--color-primary-light) !important;
+    color: var(--color-text) !important;
+    border-color: var(--color-primary) !important;
 }
 
 .ql-toolbar .ql-code-view:hover {

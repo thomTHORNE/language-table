@@ -8,7 +8,7 @@ var modifiedDataSource = [];
 // Application state
 const state = {
     // Guard against double initialization
-    initialized: false, 
+    initialized: false,
 
     // True if modifiedDataSource differs from originalDataSource.
     hasUnsavedChanges: false,
@@ -16,15 +16,20 @@ const state = {
     searchQuery: '',
     searchDebounceTimer: null,
     // { columnIndex: 'asc' | 'desc' | null }
-    sortState: {}, 
+    sortState: {},
     // Set of column indices that are collapsed
-    collapsedColumns: new Set(), 
+    collapsedColumns: new Set(),
     isSearchActive: false,
     pagination: {
         currentPage: 1,
         rowsPerPage: 25,
         rowsPerPageOptions: [25, 50, 100]
-    }
+    },
+
+    // Editor state
+    quillEditor: null,              // Quill editor instance (created once, reused)
+    currentEditContext: null,       // Track the current edit context for the modal { key, langIndex }
+    isCodeViewActive: false         // Track the current view mode (design or code)
 };
 
 // ========================================
@@ -252,21 +257,12 @@ function getTextFromHTML(html) {
 // EDIT MODE (Modal + Quill)
 // ========================================
 
-// Quill editor instance (created once, reused)
-let quillEditor = null;
-
-// Track the current edit context for the modal
-let currentEditContext = null;
-
-// Track the current view mode (design or code)
-let isCodeViewActive = false;
-
 function initializeQuillEditor() {
-    if (quillEditor) {
+    if (state.quillEditor) {
         return;
     }
 
-    quillEditor = new Quill('#quill-editor', {
+    state.quillEditor = new Quill('#quill-editor', {
         modules: {
             toolbar: {
                 container: [
@@ -287,10 +283,13 @@ function initializeQuillEditor() {
     });
 
     // Add custom button to toolbar
-    const codeViewButton = document.querySelector('.ql-code-view');
-    if (codeViewButton) {
-        codeViewButton.innerHTML = 'Preview code';
-    }
+    // Use setTimeout to ensure button is rendered
+    setTimeout(() => {
+        const codeViewButton = document.querySelector('.ql-code-view');
+        if (codeViewButton) {
+            codeViewButton.innerHTML = 'Code View';
+        }
+    }, 0);
 
     // Modal button event listeners
     document.getElementById('edit-modal-save-btn').addEventListener('click', handleModalSave);
@@ -306,10 +305,21 @@ function initializeQuillEditor() {
 
     // Close modal on Escape key
     document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && currentEditContext) {
+        if (e.key === 'Escape' && state.currentEditContext) {
             handleModalCancel();
         }
     });
+}
+
+/**
+ * Decode HTML entities in a string for better readability in code view
+ * @param {string} html - HTML string with entities
+ * @returns {string} - HTML string with decoded entities
+ */
+function decodeHTMLEntities(html) {
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = html;
+    return textarea.value;
 }
 
 function toggleCodeView() {
@@ -318,24 +328,27 @@ function toggleCodeView() {
     const codeViewTextarea = document.getElementById('code-view-textarea');
     const codeViewButton = document.querySelector('.ql-code-view');
 
-    if (!isCodeViewActive) {
+    if (!state.isCodeViewActive) {
         // Switch to Code View
         // Get HTML content from Quill
-        const htmlContent = quillEditor.getSemanticHTML();
+        const htmlContent = state.quillEditor.getSemanticHTML();
 
-        // Display HTML in textarea
-        codeViewTextarea.value = htmlContent;
+        // Decode HTML entities for better readability
+        const decodedHTML = decodeHTMLEntities(htmlContent);
+
+        // Display decoded HTML in textarea
+        codeViewTextarea.value = decodedHTML;
 
         // Hide Quill editor, show code view
         quillEditorContainer.style.display = 'none';
         codeViewContainer.style.display = 'block';
 
-        // Update button state
         if (codeViewButton) {
             codeViewButton.classList.add('ql-active');
+            codeViewButton.setAttribute('data-active', 'true');
         }
 
-        isCodeViewActive = true;
+        state.isCodeViewActive = true;
     } else {
         // Switch back to Design View
         // Hide code view, show Quill editor
@@ -345,12 +358,13 @@ function toggleCodeView() {
         // Update button state
         if (codeViewButton) {
             codeViewButton.classList.remove('ql-active');
+            codeViewButton.removeAttribute('data-active');
         }
 
         // Focus the editor
-        quillEditor.focus();
+        state.quillEditor.focus();
 
-        isCodeViewActive = false;
+        state.isCodeViewActive = false;
     }
 }
 
@@ -358,7 +372,7 @@ function handleCellClick(e, key, langIndex, currentValue) {
     e.stopPropagation();
 
     // Don't open modal if already editing
-    if (currentEditContext) {
+    if (state.currentEditContext) {
         return;
     }
 
@@ -370,13 +384,13 @@ function openEditModal(key, langIndex, currentValue) {
     initializeQuillEditor();
 
     // Store the edit context
-    currentEditContext = { key, langIndex };
+    state.currentEditContext = { key, langIndex };
 
     // Set the Quill editor content
     // Use clipboard.dangerouslyPasteHTML to load HTML content
-    quillEditor.root.innerHTML = '';
+    state.quillEditor.root.innerHTML = '';
     if (currentValue && currentValue.trim() !== '') {
-        quillEditor.clipboard.dangerouslyPasteHTML(0, currentValue);
+        state.quillEditor.clipboard.dangerouslyPasteHTML(0, currentValue);
     }
 
     // Show the modal
@@ -384,18 +398,18 @@ function openEditModal(key, langIndex, currentValue) {
     modal.style.display = 'flex';
 
     // Focus the editor
-    quillEditor.focus();
+    state.quillEditor.focus();
 }
 
 function handleModalSave() {
-    if (!currentEditContext) {
+    if (!state.currentEditContext) {
         return;
     }
 
-    const { key, langIndex } = currentEditContext;
+    const { key, langIndex } = state.currentEditContext;
 
     // Get HTML content from Quill
-    const newValue = quillEditor.getSemanticHTML();
+    const newValue = state.quillEditor.getSemanticHTML();
 
     // Update modifiedDataSource
     modifiedDataSource[langIndex].Translations[key] = newValue;
@@ -416,32 +430,34 @@ function handleModalCancel() {
 }
 
 function closeEditModal() {
-    currentEditContext = null;
-
-    // Hide the modal
-    const modal = document.getElementById('edit-modal');
-    modal.style.display = 'none';
+    state.currentEditContext = null;
 
     // Reset to design view if in code view
-    if (isCodeViewActive) {
+    if (state.isCodeViewActive) {
         const quillEditorContainer = document.getElementById('quill-editor');
         const codeViewContainer = document.getElementById('code-view');
-        const codeViewButton = document.querySelector('.ql-code-view');
 
         codeViewContainer.style.display = 'none';
         quillEditorContainer.style.display = 'block';
 
-        if (codeViewButton) {
-            codeViewButton.classList.remove('ql-active');
-        }
+        state.isCodeViewActive = false;
+    }
 
-        isCodeViewActive = false;
+    // Always reset button state (even if not in code view, to ensure clean state)
+    const codeViewButton = document.querySelector('.ql-code-view');
+    if (codeViewButton) {
+        codeViewButton.classList.remove('ql-active');
+        codeViewButton.removeAttribute('data-active');
     }
 
     // Clear the editor content
-    if (quillEditor) {
-        quillEditor.root.innerHTML = '';
+    if (state.quillEditor) {
+        state.quillEditor.root.innerHTML = '';
     }
+
+    // Hide the modal (do this last to avoid visual glitches)
+    const modal = document.getElementById('edit-modal');
+    modal.style.display = 'none';
 }
 
 // ========================================
@@ -471,7 +487,7 @@ function handleClearSearch() {
 
 function performSearch(query) {
     // Close modal if open when search is performed
-    if (currentEditContext) {
+    if (state.currentEditContext) {
         closeEditModal();
     }
 
@@ -567,15 +583,15 @@ function cycleSortState(columnIndex) {
 function handleDiscardChanges() {
     // Reset modifiedDataSource to original
     modifiedDataSource = JSON.parse(JSON.stringify(originalDataSource));
-    
+
     // Reset state
     state.hasUnsavedChanges = false;
 
     // Close modal if open
-    if (currentEditContext) {
+    if (state.currentEditContext) {
         closeEditModal();
     }
-    
+
     updateUI();
     renderTable();
 }
@@ -738,7 +754,7 @@ function goToPage(page) {
     }
 
     // Close modal if open
-    if (currentEditContext) {
+    if (state.currentEditContext) {
         closeEditModal();
     }
 
@@ -750,7 +766,7 @@ function handleRowsPerPageChange(e) {
     const newRowsPerPage = parseInt(e.target.value, 10);
 
     // Close modal if open
-    if (currentEditContext) {
+    if (state.currentEditContext) {
         closeEditModal();
     }
 
