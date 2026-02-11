@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Language Table</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- Quill.js Rich Text Editor -->
+    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet" />
 </head>
 <body>
     <div class="container">
@@ -268,6 +270,26 @@
             form.submit();
         }
     </script>
+
+    <!-- Quill.js Rich Text Editor -->
+    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+
+    <!-- Edit Modal with Quill Editor -->
+    <div id="edit-modal" class="edit-modal-overlay" style="display: none;">
+        <div class="edit-modal-content">
+            <div class="edit-modal-header">
+                <h3 class="edit-modal-title">Edit Translation</h3>
+                <button id="edit-modal-close-btn" class="edit-modal-close-btn">&times;</button>
+            </div>
+            <div class="edit-modal-body">
+                <div id="quill-editor"></div>
+            </div>
+            <div class="edit-modal-footer">
+                <button id="edit-modal-cancel-btn" class="edit-modal-btn edit-modal-cancel-btn">Cancel</button>
+                <button id="edit-modal-save-btn" class="edit-modal-btn edit-modal-save-btn">Save</button>
+            </div>
+        </div>
+    </div>
 
     <script src="language-table.js"></script>
 </body>

@@ -324,11 +324,6 @@ body {
     outline-offset: -1px;
 }
 
-.language-table td.value-cell.editing {
-    outline: 2px solid var(--color-text-muted);
-    outline-offset: -2px;
-}
-
 .language-table td.collapsed-cell {
     width: 35px;
     min-width: 35px;
@@ -339,62 +334,123 @@ body {
     color: transparent;
 }
 
-/* Edit mode */
-.edit-input {
+/* ========================================
+   EDIT MODAL
+   ======================================== */
+.edit-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
     width: 100%;
-    min-height: 60px;
-    padding: var(--spacing-sm);
-    border: var(--border-width) solid var(--color-border);
-    border-radius: var(--border-radius);
-    font-size: var(--font-size-base);
-    font-family: var(--font-family);
-    resize: vertical;
-    outline: none;
-}
-
-.edit-input:focus {
-    border-color: var(--color-text-muted);
-}
-
-/* Edit buttons overlay */
-.edit-buttons {
-    position: relative;
-    display: flex;
-    gap: var(--spacing-xs);
-    padding-top: var(--spacing-sm);
-}
-
-.edit-btn {
-    width: 32px;
-    height: 32px;
-    border: none;
-    border-radius: var(--border-radius);
-    cursor: pointer;
-    font-size: var(--font-size-lg);
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: var(--spacing-xl);
+}
+
+.edit-modal-content {
+    background-color: var(--color-primary-bg);
+    border-radius: var(--border-radius);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    width: 100%;
+    max-width: 800px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.edit-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-lg) var(--spacing-xl);
+    border-bottom: var(--border-width) solid var(--color-border-subtle);
+}
+
+.edit-modal-title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.edit-modal-close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: var(--spacing-xs);
+    line-height: 1;
+    transition: color var(--transition-speed);
+}
+
+.edit-modal-close-btn:hover {
+    color: var(--color-text);
+}
+
+.edit-modal-body {
+    flex: 1;
+    padding: var(--spacing-lg) var(--spacing-xl);
+    overflow-y: auto;
+    min-height: 300px;
+}
+
+/* Quill editor container inside modal */
+.edit-modal-body #quill-editor {
+    min-height: 200px;
+}
+
+.edit-modal-body .ql-container {
+    font-size: var(--font-size-base);
+    font-family: var(--font-family);
+}
+
+.edit-modal-body .ql-editor {
+    min-height: 200px;
+}
+
+.edit-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-lg) var(--spacing-xl);
+    border-top: var(--border-width) solid var(--color-border-subtle);
+}
+
+.edit-modal-btn {
+    padding: var(--spacing-sm) var(--spacing-xl);
+    border: none;
+    border-radius: var(--border-radius);
+    font-size: var(--font-size-base);
+    font-family: var(--font-family);
+    font-weight: var(--font-weight-bold);
+    cursor: pointer;
     transition: all var(--transition-speed);
 }
 
-.save-btn {
+.edit-modal-save-btn {
     background-color: var(--color-save-btn);
     color: var(--color-primary-bg);
 }
 
-.save-btn:hover {
+.edit-modal-save-btn:hover {
     background-color: var(--color-save-btn-hover);
 }
 
-.cancel-btn {
+.edit-modal-cancel-btn {
     background-color: var(--color-primary-bg);
-    color: var(--color-cancel-btn);
-    border: 2px solid var(--color-cancel-btn);
+    color: var(--color-text-muted);
+    border: var(--border-width) solid var(--color-border);
 }
 
-.cancel-btn:hover {
-    background-color: var(--color-cancel-btn);
-    color: var(--color-primary-bg);
+.edit-modal-cancel-btn:hover {
+    background-color: var(--color-secondary-bg);
+    color: var(--color-text);
 }
 
 /* ========================================

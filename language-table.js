@@ -7,13 +7,18 @@ var modifiedDataSource = [];
 
 // Application state
 const state = {
-    initialized: false, // Guard against double initialization
-    currentEditCell: null,
+    // Guard against double initialization
+    initialized: false, 
+
+    // True if modifiedDataSource differs from originalDataSource.
     hasUnsavedChanges: false,
+    // Current text in the search input.
     searchQuery: '',
     searchDebounceTimer: null,
-    sortState: {}, // { columnIndex: 'asc' | 'desc' | null }
-    collapsedColumns: new Set(), // Set of column indices that are collapsed
+    // { columnIndex: 'asc' | 'desc' | null }
+    sortState: {}, 
+    // Set of column indices that are collapsed
+    collapsedColumns: new Set(), 
     isSearchActive: false,
     pagination: {
         currentPage: 1,
@@ -60,9 +65,6 @@ function initializeEventListeners() {
     // Discard changes button
     const discardChangesBtn = document.getElementById('discard-changes-btn');
     discardChangesBtn.addEventListener('click', handleDiscardChanges);
-
-    // Click outside to handle edit mode (do nothing per requirements)
-    document.addEventListener('click', handleDocumentClick);
 
     // Pagination listeners
     initializePaginationListeners();
@@ -247,77 +249,97 @@ function getTextFromHTML(html) {
 }
 
 // ========================================
-// EDIT MODE
+// EDIT MODE (Modal + Quill)
 // ========================================
+
+// Quill editor instance (created once, reused)
+let quillEditor = null;
+
+// Track the current edit context for the modal
+let currentEditContext = null;
+
+function initializeQuillEditor() {
+    if (quillEditor) {
+        return;
+    }
+
+    quillEditor = new Quill('#quill-editor', {
+        modules: {
+            toolbar: [
+                [{ 'header': [1, 2, 3, false] }],
+                ['bold', 'italic', 'underline', 'strike'],
+                [{ 'color': [] }, { 'background': [] }],
+                [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                ['link'],
+                ['clean']
+            ]
+        },
+        theme: 'snow'
+    });
+
+    // Modal button event listeners
+    document.getElementById('edit-modal-save-btn').addEventListener('click', handleModalSave);
+    document.getElementById('edit-modal-cancel-btn').addEventListener('click', handleModalCancel);
+    document.getElementById('edit-modal-close-btn').addEventListener('click', handleModalCancel);
+
+    // Close modal on overlay click (outside modal content)
+    document.getElementById('edit-modal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            handleModalCancel();
+        }
+    });
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && currentEditContext) {
+            handleModalCancel();
+        }
+    });
+}
 
 function handleCellClick(e, key, langIndex, currentValue) {
     e.stopPropagation();
 
-    const cell = e.currentTarget;
-
-    // Don't re-enter edit mode if already editing this cell
-    if (state.currentEditCell === cell) {
+    // Don't open modal if already editing
+    if (currentEditContext) {
         return;
     }
 
-    // Exit any existing edit mode
-    if (state.currentEditCell) {
-        exitEditMode(true); // discard changes - this will re-render the table
+    openEditModal(key, langIndex, currentValue);
+}
 
-        // After re-render, find the new cell element in the DOM
-        const newCell = document.querySelector(`td.value-cell[data-key="${key}"][data-lang-index="${langIndex}"]`);
-        if (newCell) {
-            enterEditMode(newCell, key, langIndex, currentValue);
-        }
+function openEditModal(key, langIndex, currentValue) {
+    // Initialize Quill if not yet created
+    initializeQuillEditor();
+
+    // Store the edit context
+    currentEditContext = { key, langIndex };
+
+    // Set the Quill editor content
+    // Use clipboard.dangerouslyPasteHTML to load HTML content
+    quillEditor.root.innerHTML = '';
+    if (currentValue && currentValue.trim() !== '') {
+        quillEditor.clipboard.dangerouslyPasteHTML(0, currentValue);
+    }
+
+    // Show the modal
+    const modal = document.getElementById('edit-modal');
+    modal.style.display = 'flex';
+
+    // Focus the editor
+    quillEditor.focus();
+}
+
+function handleModalSave() {
+    if (!currentEditContext) {
         return;
     }
 
-    enterEditMode(cell, key, langIndex, currentValue);
-}
+    const { key, langIndex } = currentEditContext;
 
-function enterEditMode(cell, key, langIndex, currentValue) {
-    state.currentEditCell = cell;
-    cell.classList.add('editing');
-    
-    // Create textarea for editing
-    const textarea = document.createElement('textarea');
-    textarea.className = 'edit-input';
-    textarea.value = currentValue;
-    
-    // Create button container
-    const buttonContainer = document.createElement('div');
-    buttonContainer.className = 'edit-buttons';
-    
-    // Save button
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'edit-btn save-btn';
-    saveBtn.innerHTML = '✔';
-    saveBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        saveEdit(cell, key, langIndex, textarea.value);
-    });
-    
-    // Cancel button
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'edit-btn cancel-btn';
-    cancelBtn.innerHTML = '✖';
-    cancelBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        exitEditMode(true);
-    });
-    
-    buttonContainer.appendChild(saveBtn);
-    buttonContainer.appendChild(cancelBtn);
-    
-    // Clear cell and add edit controls
-    cell.innerHTML = '';
-    cell.appendChild(textarea);
-    cell.appendChild(buttonContainer);
-    
-    textarea.focus();
-}
+    // Get HTML content from Quill
+    const newValue = quillEditor.getSemanticHTML();
 
-function saveEdit(_cell, key, langIndex, newValue) {
     // Update modifiedDataSource
     modifiedDataSource[langIndex].Translations[key] = newValue;
 
@@ -325,24 +347,27 @@ function saveEdit(_cell, key, langIndex, newValue) {
     state.hasUnsavedChanges = true;
     updateUI();
 
-    // Exit edit mode
-    exitEditMode(false);
+    // Close the modal
+    closeEditModal();
 
     // Re-render table to show updated value
     renderTable();
 }
 
-function exitEditMode(discard) {
-    if (!state.currentEditCell) {
-        return;
-    }
-    
-    state.currentEditCell.classList.remove('editing');
-    state.currentEditCell = null;
-    
-    // Re-render to restore display mode
-    if (discard) {
-        renderTable();
+function handleModalCancel() {
+    closeEditModal();
+}
+
+function closeEditModal() {
+    currentEditContext = null;
+
+    // Hide the modal
+    const modal = document.getElementById('edit-modal');
+    modal.style.display = 'none';
+
+    // Clear the editor content
+    if (quillEditor) {
+        quillEditor.root.innerHTML = '';
     }
 }
 
@@ -372,9 +397,9 @@ function handleClearSearch() {
 }
 
 function performSearch(query) {
-    // Exit edit mode and discard changes when search is performed
-    if (state.currentEditCell) {
-        exitEditMode(true);
+    // Close modal if open when search is performed
+    if (currentEditContext) {
+        closeEditModal();
     }
 
     state.searchQuery = query;
@@ -472,7 +497,11 @@ function handleDiscardChanges() {
     
     // Reset state
     state.hasUnsavedChanges = false;
-    state.currentEditCell = null;
+
+    // Close modal if open
+    if (currentEditContext) {
+        closeEditModal();
+    }
     
     updateUI();
     renderTable();
@@ -492,16 +521,7 @@ function updateUI() {
     discardBtn.style.display = state.hasUnsavedChanges ? 'block' : 'none';
 }
 
-function handleDocumentClick(e) {
-    // When clicking outside a cell that is in edit mode,
-    // exit edit mode and discard changes to allow future cell editing
-    if (state.currentEditCell) {
-        // Check if the click was outside the current editing cell
-        if (!state.currentEditCell.contains(e.target)) {
-            exitEditMode(true);
-        }
-    }
-}
+
 
 // ========================================
 // PAGINATION FUNCTIONALITY
@@ -644,9 +664,9 @@ function goToPage(page) {
         return;
     }
 
-    // Exit edit mode if active
-    if (state.currentEditCell) {
-        exitEditMode(true);
+    // Close modal if open
+    if (currentEditContext) {
+        closeEditModal();
     }
 
     state.pagination.currentPage = page;
@@ -656,9 +676,9 @@ function goToPage(page) {
 function handleRowsPerPageChange(e) {
     const newRowsPerPage = parseInt(e.target.value, 10);
 
-    // Exit edit mode if active
-    if (state.currentEditCell) {
-        exitEditMode(true);
+    // Close modal if open
+    if (currentEditContext) {
+        closeEditModal();
     }
 
     state.pagination.rowsPerPage = newRowsPerPage;
