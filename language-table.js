@@ -386,6 +386,30 @@ function toggleCodeView() {
     }
 }
 
+/**
+ * Check if a Quill delta contains any formatting attributes.
+ * This detects bold, italic, underline, strike, color, background,
+ * headers, lists, links, alignment, and any other Quill formatting.
+ * @param {Object} delta - Quill delta object from getContents()
+ * @returns {boolean} - True if any op has formatting attributes or non-text inserts (embeds)
+ */
+function deltaHasFormatting(delta) {
+    if (!delta || !delta.ops) {
+        return false;
+    }
+    return delta.ops.some(op => {
+        // Check for formatting attributes (bold, italic, color, header, list, link, etc.)
+        if (op.attributes && Object.keys(op.attributes).length > 0) {
+            return true;
+        }
+        // Check for non-text inserts (embeds like images, videos, etc.)
+        if (typeof op.insert !== 'string') {
+            return true;
+        }
+        return false;
+    });
+}
+
 function handleCellClick(e, key, langIndex, currentValue) {
     e.stopPropagation();
 
@@ -401,8 +425,9 @@ function openEditModal(key, langIndex, currentValue) {
     // Initialize Quill if not yet created
     initializeQuillEditor();
 
-    // Store the edit context
-    state.currentEditContext = { key, langIndex };
+    // Store the edit context with original value for smart save logic
+    const originalValue = currentValue || '';
+    state.currentEditContext = { key, langIndex, originalValue };
 
     // Set the Quill editor content
     // Use clipboard.dangerouslyPasteHTML to load HTML content
@@ -410,6 +435,10 @@ function openEditModal(key, langIndex, currentValue) {
     if (currentValue && currentValue.trim() !== '') {
         state.quillEditor.clipboard.dangerouslyPasteHTML(0, currentValue);
     }
+
+    // Capture the initial text content after Quill has processed the value.
+    // This is used on save to detect whether the text was actually modified.
+    state.currentEditContext.originalText = state.quillEditor.getText();
 
     // Show the modal
     const modal = document.getElementById('edit-modal');
@@ -424,18 +453,34 @@ function handleModalSave() {
         return;
     }
 
-    const { key, langIndex } = state.currentEditContext;
+    const { key, langIndex, originalValue, originalText } = state.currentEditContext;
 
     let newValue;
 
     // Check if we're in code view mode
     if (state.isCodeViewActive) {
-        // Get HTML content directly from the textarea
+        // Code view: user is editing raw HTML directly, use as-is
         const codeViewTextarea = document.getElementById('code-view-textarea');
         newValue = codeViewTextarea.value;
     } else {
-        // Get HTML content from Quill
-        newValue = state.quillEditor.getSemanticHTML();
+        // Design view: apply smart save logic to avoid unnecessary HTML wrapping
+        const currentDelta = state.quillEditor.getContents();
+        const currentText = state.quillEditor.getText();
+        const hasFormatting = deltaHasFormatting(currentDelta);
+
+        if (hasFormatting) {
+            // Case 3: User explicitly applied formatting (bold, italic, color, headers, lists, etc.)
+            // Let Quill handle the content natively with its HTML output
+            newValue = state.quillEditor.getSemanticHTML();
+        } else if (currentText === originalText) {
+            // Case 1: No edits made (preview only) - preserve the original value exactly
+            newValue = originalValue;
+        } else {
+            // Case 2: Text content changed but no formatting applied
+            // Return plain text without HTML wrapper elements
+            // Remove the trailing newline that Quill always appends
+            newValue = currentText.replace(/\n$/, '');
+        }
     }
 
     // Update modifiedDataSource
