@@ -258,6 +258,9 @@ let quillEditor = null;
 // Track the current edit context for the modal
 let currentEditContext = null;
 
+// Track the current view mode (design or code)
+let isCodeViewActive = false;
+
 function initializeQuillEditor() {
     if (quillEditor) {
         return;
@@ -265,17 +268,29 @@ function initializeQuillEditor() {
 
     quillEditor = new Quill('#quill-editor', {
         modules: {
-            toolbar: [
-                [{ 'header': [1, 2, 3, false] }],
-                ['bold', 'italic', 'underline', 'strike'],
-                [{ 'color': [] }, { 'background': [] }],
-                [{ 'list': 'ordered' }, { 'list': 'bullet' }],
-                ['link'],
-                ['clean']
-            ]
+            toolbar: {
+                container: [
+                    [{ 'header': [1, 2, 3, false] }],
+                    ['bold', 'italic', 'underline', 'strike'],
+                    [{ 'color': [] }, { 'background': [] }],
+                    [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+                    ['link'],
+                    ['clean'],
+                    ['code-view'] // Custom button for code view toggle
+                ],
+                handlers: {
+                    'code-view': toggleCodeView
+                }
+            }
         },
         theme: 'snow'
     });
+
+    // Add custom button to toolbar
+    const codeViewButton = document.querySelector('.ql-code-view');
+    if (codeViewButton) {
+        codeViewButton.innerHTML = 'Preview code';
+    }
 
     // Modal button event listeners
     document.getElementById('edit-modal-save-btn').addEventListener('click', handleModalSave);
@@ -295,6 +310,48 @@ function initializeQuillEditor() {
             handleModalCancel();
         }
     });
+}
+
+function toggleCodeView() {
+    const quillEditorContainer = document.getElementById('quill-editor');
+    const codeViewContainer = document.getElementById('code-view');
+    const codeViewTextarea = document.getElementById('code-view-textarea');
+    const codeViewButton = document.querySelector('.ql-code-view');
+
+    if (!isCodeViewActive) {
+        // Switch to Code View
+        // Get HTML content from Quill
+        const htmlContent = quillEditor.getSemanticHTML();
+
+        // Display HTML in textarea
+        codeViewTextarea.value = htmlContent;
+
+        // Hide Quill editor, show code view
+        quillEditorContainer.style.display = 'none';
+        codeViewContainer.style.display = 'block';
+
+        // Update button state
+        if (codeViewButton) {
+            codeViewButton.classList.add('ql-active');
+        }
+
+        isCodeViewActive = true;
+    } else {
+        // Switch back to Design View
+        // Hide code view, show Quill editor
+        codeViewContainer.style.display = 'none';
+        quillEditorContainer.style.display = 'block';
+
+        // Update button state
+        if (codeViewButton) {
+            codeViewButton.classList.remove('ql-active');
+        }
+
+        // Focus the editor
+        quillEditor.focus();
+
+        isCodeViewActive = false;
+    }
 }
 
 function handleCellClick(e, key, langIndex, currentValue) {
@@ -364,6 +421,22 @@ function closeEditModal() {
     // Hide the modal
     const modal = document.getElementById('edit-modal');
     modal.style.display = 'none';
+
+    // Reset to design view if in code view
+    if (isCodeViewActive) {
+        const quillEditorContainer = document.getElementById('quill-editor');
+        const codeViewContainer = document.getElementById('code-view');
+        const codeViewButton = document.querySelector('.ql-code-view');
+
+        codeViewContainer.style.display = 'none';
+        quillEditorContainer.style.display = 'block';
+
+        if (codeViewButton) {
+            codeViewButton.classList.remove('ql-active');
+        }
+
+        isCodeViewActive = false;
+    }
 
     // Clear the editor content
     if (quillEditor) {
