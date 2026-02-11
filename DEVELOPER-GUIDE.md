@@ -1,470 +1,281 @@
-# Developer Guide: `language-table.js`
+# Developer Guide: Language Table UI
 
-This guide explains the internal architecture and implementation details of `language-table.js`. It is intended for developers who need to add features, fix bugs, or otherwise maintain the translation table UI.
-
----
-
-## 1. Architecture Overview
-
-### 1.1 Responsibilities of `language-table.js`
-
-`language-table.js` is a self-contained client-side controller for the "language/translation table" UI. Its responsibilities are:
-
-- Maintain the in-memory representation of translations (`modifiedDataSource`).
-- Track UI state (edit mode, search, sort, collapsed columns, pagination, etc.).
-- Render the table header, body, and pagination controls into the DOM.
-- Handle all user interactions (cell editing, search input, sort toggling, pagination, discarding changes, column collapse).
-- Expose `modifiedDataSource` globally so server-side code can read the latest edits.
-
-### 1.2 High-Level Structure
-
-Key top-level elements (see lines 5–22, 29–36):
-
-- **Global variables**
-  - `originalDataSource` (provided externally, typically from server-side rendering).
-  - `modifiedDataSource` (line 5) – deep clone of `originalDataSource`, mutated by the UI.
-- **Central `state` object** (lines 9–22)
-  - Tracks all transient UI state (edit mode, search, sort, pagination, etc.).
-- **Initialization block** (lines 29–36)
-  - On `DOMContentLoaded`, calls `initializeData()`, `initializeEventListeners()`, `renderTable()` if `originalDataSource` exists.
-- **Feature sections**
-  - Clearly separated by comment banners:
-    - Global State / Initialization
-    - Table Rendering
-    - Edit Mode
-    - Search Functionality
-    - Sorting Functionality
-    - Discard Changes
-    - UI Updates
-    - Pagination Functionality
-
-### 1.3 State-Driven Rendering Pattern
-
-The overall pattern is:
-
-1. **Mutate state and/or `modifiedDataSource`.**
-2. **Call `renderTable()`** to re-render header + body + pagination.
-3. **Call `updateUI()`** when `hasUnsavedChanges` changes.
-
-`renderTable()` (lines 75–80) is the core entry point for drawing the UI. It:
-
-- Chooses `dataToRender` based on `state.isSearchActive` (`modifiedDataSource` vs. `getSearchResults()`).
-- Calls `renderTableHeader()`.
-- Calls `renderTableBody(dataToRender)` and obtains `totalRows`.
-- Calls `renderPagination(totalRows)`.
-
-### 1.4 Separation of Concerns
-
-- **Data & state:**
-  - `originalDataSource`, `modifiedDataSource`, and `state` keep data and UI state separate from rendering.
-- **Rendering:**
-  - `renderTableHeader`, `renderTableBody`, `renderPagination` (+ helpers) are responsible only for DOM creation / updates based on current state.
-- **Event handling & behavior:**
-  - `initializeEventListeners` wires DOM events into handler functions.
-  - Handlers (`handleCellClick`, `handleSearchInput`, `cycleSortState`, `goToPage`, etc.) mutate state and then trigger re-renders.
+This guide explains how the current implementation of the language/translation table works and how to integrate and extend it. It is intended as an onboarding document for developers who need to add features, fix bugs, or embed this UI into another application.
 
 ---
 
-## 2. State Management
+## 1. Project overview
 
-### 2.1 `state` Object Structure
+This repository is a **standalone, browser-based translation table** for editing key/value pairs where values can contain rich HTML.
 
-Defined at lines 9–22:
+- **Tech stack:** plain HTML, CSS, and vanilla JavaScript; [Quill](https://quilljs.com/) is used as a rich text editor inside a modal dialog.
+- **Primary entry point:** `index.html` (loads the table markup, sample data, styles, Quill, and `language-table.js`).
+- **Core logic:** `language-table.js` – responsible for rendering the table, managing state, handling search/sort/pagination, and launching the Quill-based edit modal.
+
+The UI is designed to be embedded into a larger server-side app: the server provides the initial translation data, and reads back the edited data via a hidden form post.
+
+---
+
+## 2. Repository structure
+
+- `index.html` – Main HTML page demonstrating the language table.
+  - Declares `originalDataSource` (sample translation data).
+  - Defines the hidden `<form>` and `submitTranslations()` helper used to POST edits back to the server.
+  - Contains the modal markup for the Quill editor and code view.
+  - Includes Quill CSS/JS and the `language-table.js` script.
+- `language-table.js` – All client-side behavior and rendering logic for the table.
+  - Manages global UI state and `modifiedDataSource`.
+  - Renders header/body and pagination.
+  - Integrates the Quill editor in a modal for editing values.
+- `styles.css` – Layout and styling for the toolbar, table, pagination, edit modal, and Quill overrides.
+- `quilljs/` – Local copy of Quill JS and CSS assets (Snow theme) used by the modal editor. These are treated as third-party, vendor files.
+
+There is no build step or bundler; everything runs directly in the browser.
+
+---
+
+## 3. Data model & host integration
+
+### 3.1 Data shape
+
+Both the server-provided data and the client-modified data share the same structure:
+
+- Top-level: `Array<Language>`
+- `Language` object:
+  - `LanguageTwoLetter: string` – language code (e.g. `"en"`, `"hr"`).
+  - `Translations: { [key: string]: string }` – mapping from translation key to **HTML string**.
+
+Example (simplified):
 
 ```js
-const state = {
-  initialized: false,
-  currentEditCell: null,
-  hasUnsavedChanges: false,
-  searchQuery: '',
-  searchDebounceTimer: null,
-  sortState: {},
-  collapsedColumns: new Set(),
-  isSearchActive: false,
-  pagination: {
-    currentPage: 1,
-    rowsPerPage: 25,
-    rowsPerPageOptions: [25, 50, 100]
+var originalDataSource = [
+  {
+    LanguageTwoLetter: 'en',
+    Translations: {
+      status_payment_aggregated: 'Aggregated',
+      email_payment_slip_HRK: '<div>…rich HTML…</div>'
+    }
+  },
+  {
+    LanguageTwoLetter: 'hr',
+    Translations: {
+      status_payment_aggregated: 'Agregiran'
+    }
   }
-};
+];
 ```
 
-### 2.2 Property-by-Property
-
-- `initialized: boolean`
-  - Guard to avoid registering duplicate DOM event listeners.
-  - Used in `initializeEventListeners()` (lines 45–50).
-- `currentEditCell: HTMLTableCellElement | null`
-  - Points to the `<td>` currently in edit mode (see `enterEditMode` / `exitEditMode`).
-  - `null` when not editing.
-- `hasUnsavedChanges: boolean`
-  - True if `modifiedDataSource` differs from `originalDataSource`.
-  - Set to `true` in `saveEdit()` (lines 320–327).
-  - Set to `false` in `handleDiscardChanges()` (lines 469–477).
-  - Controls visibility of unsaved-changes notification and discard button in `updateUI()`.
-- `searchQuery: string`
-  - Current text in the search input.
-  - Set in `performSearch()` (line 380).
-  - Used by `getSearchResults()` (lines 394–435).
-- `searchDebounceTimer: number | null`
-  - Stores the timer ID for debounced search in `handleSearchInput()` (lines 353–365).
-- `sortState: { [columnIndex: number]: 'asc' | 'desc' } | {}`
-  - At most one entry at a time (enforced by `cycleSortState`, lines 450–460).
-  - Key: column index (stringified when accessing via `Object.keys`).
-  - Value: `'asc'`, `'desc'`, or absent (meaning no sort).
-- `collapsedColumns: Set<number>`
-  - Indices of columns whose cells are visually collapsed.
-  - Used in `renderTableHeader()` (lines 104–107) and `renderTableBody()` (lines 185–188).
-- `isSearchActive: boolean`
-  - True when `searchQuery.trim() !== ''` (line 381).
-  - Controls whether `renderTable()` uses `modifiedDataSource` or `getSearchResults()`.
-- `pagination: { currentPage, rowsPerPage, rowsPerPageOptions }`
-  - `currentPage: number` – 1-based page index (lines 18–21).
-  - `rowsPerPage: number` – number of rows per page.
-  - `rowsPerPageOptions: number[]` – allowed options for the rows-per-page selector.
-
-### 2.3 Where to Add New State
-
-- Add new top-level flags or nested objects directly on `state`.
-- Keep **derived state** (that can be recomputed from other state) out of `state` to avoid inconsistencies.
-- Whenever new state affects what is shown, ensure it is respected inside `renderTable()` and/or its helpers.
-
----
-
-## 3. Data Flow
-
-### 3.1 `originalDataSource` vs. `modifiedDataSource`
+### 3.2 `originalDataSource` and `modifiedDataSource`
 
 - `originalDataSource`
-  - Provided globally by server-side code.
-  - Must not be mutated directly.
-- `modifiedDataSource` (line 5)
-  - Deep clone of `originalDataSource`, created in `initializeData()` (lines 38–43).
-  - **All edits** are applied to `modifiedDataSource`.
-  - Used as the **single source of truth for columns and translations** when rendering.
+  - Defined globally **before** `language-table.js` is loaded (see `index.html`).
+  - Represents the authoritative data from the server.
+  - Must **never** be mutated by the UI code.
+- `modifiedDataSource`
+  - Global variable defined in `language-table.js`.
+  - Deep clone of `originalDataSource`, created in `initializeData()`.
+  - All edits are applied to `modifiedDataSource` and rendered from there.
+  - This is what should be serialized and sent back to the server.
 
-```js
-function initializeData() {
-  if (originalDataSource && originalDataSource.length > 0) {
-    modifiedDataSource = JSON.parse(JSON.stringify(originalDataSource));
-  }
-}
-```
+### 3.3 Submitting data back to the server
 
-**Key rule:** `modifiedDataSource` indices are always used for column mapping to keep a stable alignment between table columns and language entries, regardless of search or filtering.
+`index.html` includes a hidden form and a helper function:
 
-### 3.2 Rendering and Re-rendering
+- Hidden form (`#translations-form`) with a hidden `<input id="translations-json">`.
+- `submitTranslations()` (defined inline in `index.html`):
+  - Serializes `modifiedDataSource` with `JSON.stringify`.
+  - Writes it into the hidden input.
+  - Submits the form to the configured `action` URL.
 
-Typical flow for any user action:
+To integrate into your own app:
 
-1. Event handler runs (e.g., `handleCellClick`, `performSearch`, `cycleSortState`, `goToPage`).
-2. Handler may:
-   - Exit edit mode (`exitEditMode(true|false)`).
-   - Mutate `modifiedDataSource`.
-   - Mutate `state` (search, sort, pagination, collapse, etc.).
-3. Handler calls `renderTable()` to recompute and rebuild the DOM based on current state.
-4. If `hasUnsavedChanges` changed, handler calls `updateUI()` to refresh notification controls.
-
-### 3.3 Editing Flow
-
-- User clicks a value cell → `handleCellClick()` (lines 253–276).
-- If another cell is already in edit mode:
-  - `exitEditMode(true)` discards its changes and re-renders the table.
-  - Afterwards, `handleCellClick` finds the new cell by `data-key`/`data-lang-index` in the fresh DOM and enters edit mode.
-- `enterEditMode()` (lines 278–318) replaces cell content with a `<textarea>` and save/cancel buttons.
-- `saveEdit()` (lines 320–333) writes the new value into `modifiedDataSource[langIndex].Translations[key]`, sets `hasUnsavedChanges = true`, calls `updateUI()`, exits edit mode, then `renderTable()`.
-
-### 3.4 Search Flow
-
-- User types into search input:
-  - `handleSearchInput()` (lines 353–365) updates the clear button visibility, debounces, then calls `performSearch(query)`.
-- `performSearch()` (lines 374–391):
-  - Exits edit mode (discarding changes) if active.
-  - Updates `state.searchQuery` and `state.isSearchActive`.
-  - Clears `state.sortState` so sorting is disabled while searching.
-  - Resets `state.pagination.currentPage = 1`.
-  - Calls `renderTable()`.
-- `renderTable()` uses `getSearchResults()` (lines 394–435) when `state.isSearchActive` is true.
-- `getSearchResults()`:
-  - Builds a **new array** of language entries with filtered `Translations` objects, but preserves the outer array length and indices to match `modifiedDataSource`.
-
-### 3.5 Sorting Flow
-
-- User clicks a column header’s sort indicator:
-  - `cycleSortState(columnIndex)` (lines 450–462) cycles sort for that column through: none → ascending → descending → none, resetting other columns.
-  - Calls `renderTable()`.
-- In `renderTableBody()` (lines 147–205):
-  - `getAllKeys(data)` gathers all unique keys from the data currently being rendered (search results or `modifiedDataSource`).
-  - `applySortingToKeys(allKeys)` sorts the keys **using `modifiedDataSource[columnIndex]`** as the value source, ensuring consistent column mapping regardless of search.
-
-### 3.6 Pagination Flow
-
-- `renderTableBody()` slices the sorted key list for the current page before rendering rows (lines 162–167).
-- `renderPagination(totalRows)` (lines 524–531) computes page counts and delegates to:
-  - `renderPaginationInfo(totalRows)`.
-  - `renderPaginationControls(totalPages)`.
-  - `updatePaginationButtons(totalPages)`.
-- `goToPage(page)` (lines 636–654) validates the page, exits edit mode if needed, updates `state.pagination.currentPage`, then `renderTable()`.
-- `handleRowsPerPageChange()` (lines 656–667) updates `rowsPerPage`, resets `currentPage = 1`, exits edit mode, and re-renders.
-
-### 3.7 Discard Changes Flow
-
-- `handleDiscardChanges()` (lines 469–479) performs a full reset:
-  - Deep clones `originalDataSource` back into `modifiedDataSource`.
-  - Resets `state.hasUnsavedChanges` and `state.currentEditCell`.
-  - Calls `updateUI()` and `renderTable()`.
+1. Render an `originalDataSource` JavaScript variable on the page with your real data.
+2. Ensure the hidden form/action URL match your backend endpoint.
+3. Wire your own “Save” button to call `submitTranslations()`.
 
 ---
 
-## 4. Core Functions by Category
+## 4. JavaScript architecture (`language-table.js`)
 
-### 4.1 Initialization
+### 4.1 Global state
 
-- `initializeData()` (lines 38–43)
-  - Deep clones `originalDataSource` into `modifiedDataSource`.
-- `initializeEventListeners()` (lines 45–69)
-  - Guarded by `state.initialized` to avoid duplicate listeners.
-  - Wires up:
-    - Search input → `handleSearchInput`.
-    - Clear search → `handleClearSearch`.
-    - Discard changes → `handleDiscardChanges`.
-    - Document click → `handleDocumentClick`.
-    - Pagination buttons/selects → `initializePaginationListeners()`.
-- `initializePaginationListeners()` (lines 510–522)
-  - Wires prev/next buttons and rows-per-page `<select>` to `goToPage` / `handleRowsPerPageChange`.
+`language-table.js` declares:
 
-### 4.2 Rendering
+- `modifiedDataSource: Language[]` – mutable copy of the server data.
+- `state` – single object holding transient UI state:
+  - `initialized: boolean` – prevents multiple event binding.
+  - `hasUnsavedChanges: boolean` – drives the unsaved banner and discard button.
+  - `searchQuery: string` and `searchDebounceTimer: number | null`.
+  - `sortState: { [columnIndex: number]: 'asc' | 'desc' }` – at most one active column.
+  - `collapsedColumns: Set<number>` – indices of language columns that are visually collapsed.
+  - `isSearchActive: boolean`.
+  - `pagination: { currentPage, rowsPerPage, rowsPerPageOptions }`.
+  - `quillEditor: Quill | null` – singleton Quill instance for the modal.
+  - `currentEditContext: { key: string; langIndex: number } | null` – what is being edited in the modal.
+  - `isCodeViewActive: boolean` – whether the modal is showing Quill or the raw HTML textarea.
 
-- `renderTable()` (lines 75–80)
-  - Central orchestrator for header, body, and pagination.
-- `renderTableHeader()` (lines 82–145)
-  - Clears `<thead>` and rebuilds the header row.
-  - For each language in `modifiedDataSource`:
-    - Creates column headers with sort and collapse controls.
-    - Uses index as `data-column-index` and in `state.collapsedColumns`.
-- `renderTableBody(data)` (lines 147–205)
-  - Computes all unique keys via `getAllKeys(data)`.
-  - Applies sorting (`applySortingToKeys`).
-  - Applies pagination (slice keys for current page).
-  - Renders each row:
-    - Key cell.
-    - One value cell per language index in `modifiedDataSource`, assigning `data-key` and `data-lang-index`.
-    - Attaches `handleCellClick` to each value cell.
-- `renderPagination(totalRows)` (lines 524–531)
-  - Computes total pages from `totalRows` and `state.pagination.rowsPerPage`.
-  - Delegates to info text, page buttons, and prev/next button state.
+### 4.2 Initialization & render loop
 
-Helpers:
+On page load, if `originalDataSource` exists and has entries, the script:
 
-- `getAllKeys(data)` (lines 207–213) – collects unique keys across all language `Translations`.
-- `getTextFromHTML(html)` (lines 242–247) – strips HTML tags for sort comparisons.
+1. Waits for `DOMContentLoaded`.
+2. Calls `initializeData()` → deep-clones `originalDataSource` into `modifiedDataSource`.
+3. Calls `initializeEventListeners()` to wire up search, discard, and pagination controls.
+4. Calls `renderTable()`.
 
-### 4.3 Edit Mode
+`renderTable()` is the central render function:
 
-- `handleCellClick(e, key, langIndex, currentValue)` (lines 253–276)
-  - Main entry for entering edit mode.
-  - Prevents editing multiple cells at once by exiting any existing edit mode first.
-  - Re-finds the cell in the DOM after a re-render when switching which cell is edited.
-- `enterEditMode(cell, key, langIndex, currentValue)` (lines 278–318)
-  - Marks `state.currentEditCell` and adds the `editing` CSS class.
-  - Replaces cell content with:
-    - `textarea.edit-input` pre-filled with `currentValue`.
-    - Save (`✔`) and cancel (`✖`) buttons.
-- `saveEdit(_cell, key, langIndex, newValue)` (lines 320–333)
-  - Writes new value into `modifiedDataSource`.
+1. Chooses `dataToRender` = either `modifiedDataSource` or `getSearchResults()` depending on `state.isSearchActive`.
+2. Calls `renderTableHeader()` to rebuild the `<thead>`.
+3. Calls `renderTableBody(dataToRender)` to rebuild `<tbody>` and compute the total row count.
+4. Calls `renderPagination(totalRows)` to update info text and page controls.
+
+All user actions eventually mutate `state` and/or `modifiedDataSource`, then call `renderTable()` to re-render the view.
+
+---
+
+## 5. Editing flow (modal + Quill)
+
+### 5.1 Opening the editor
+
+- Each value cell is rendered with `data-key` and `data-lang-index` attributes.
+- Clicking a value cell calls `handleCellClick(event, key, langIndex, currentValue)`.
+- If nothing is currently being edited, `handleCellClick` calls `openEditModal(key, langIndex, currentValue)`.
+
+### 5.2 Quill initialization
+
+`openEditModal` ensures the Quill editor is created exactly once via `initializeQuillEditor()`:
+
+- Quill is attached to `#quill-editor` with the Snow theme.
+- The toolbar includes headings, inline formatting, colors, lists, links, a “clean” button, and a custom **Code View** button.
+- The custom button is wired to `toggleCodeView`, which switches between the rich text editor and a plain-text `<textarea>` that shows the underlying HTML.
+
+When opening the modal:
+
+- `state.currentEditContext` is set to `{ key, langIndex }`.
+- The existing HTML value (if any) is loaded into Quill via `clipboard.dangerouslyPasteHTML`.
+- The modal overlay `#edit-modal` is displayed and focus is given to the editor.
+
+### 5.3 Code view behavior
+
+- `toggleCodeView()` retrieves Quill’s current HTML via `getSemanticHTML()`.
+- HTML entities are decoded for readability using `decodeHTMLEntities`.
+- In code view, this decoded HTML is displayed in `#code-view-textarea` (read-only) while the Quill editor is hidden.
+- Toggling back hides the textarea, shows Quill again, and focuses the editor.
+
+### 5.4 Saving and cancelling
+
+- **Save (`handleModalSave`)**
+  - Reads HTML from Quill using `getSemanticHTML()`.
+  - Writes it into `modifiedDataSource[langIndex].Translations[key]`.
   - Sets `state.hasUnsavedChanges = true` and calls `updateUI()`.
-  - Calls `exitEditMode(false)` and re-renders the table.
-- `exitEditMode(discard)` (lines 335–347)
-  - Clears edit state and `editing` class on `state.currentEditCell`.
-  - When `discard === true`, calls `renderTable()` to restore original cell content.
+  - Closes the modal (`closeEditModal()`) and calls `renderTable()` to refresh the table.
+- **Cancel / close (`handleModalCancel` / clicking overlay / pressing Escape)**
+  - Just closes the modal without changing `modifiedDataSource`.
 
-### 4.4 Search
+`closeEditModal()` also makes sure to:
 
-- `handleSearchInput(e)` (lines 353–365)
-  - Displays/hides clear button.
-  - Debounces calls to `performSearch` using `state.searchDebounceTimer`.
-- `handleClearSearch()` (lines 367–372)
-  - Clears input, hides clear button, and calls `performSearch('')`.
-- `performSearch(query)` (lines 374–391)
-  - Exits edit mode (discarding changes) if active.
-  - Sets `state.searchQuery` and `state.isSearchActive`.
+- Reset `state.currentEditContext`.
+- Exit code view if active and reset the Code View button state.
+- Clear any content left in the Quill editor.
+
+Search, pagination, and discarding changes will **close the modal first** if there is an active edit.
+
+---
+
+## 6. Search, sorting, column collapse, and pagination
+
+### 6.1 Search
+
+- `handleSearchInput` debounces user input and calls `performSearch(query)` after 300ms.
+- `performSearch`:
+  - Closes the edit modal if open.
+  - Updates `state.searchQuery` and `state.isSearchActive`.
   - Clears `state.sortState` when search is active.
   - Resets `state.pagination.currentPage = 1`.
   - Calls `renderTable()`.
-- `getSearchResults()` (lines 394–435)
-  - Builds a filtered copy of `modifiedDataSource`, keeping language order and length.
-  - Uses a case-insensitive regex built from `state.searchQuery`.
-  - Matches against both keys and values.
-  - Catches regex errors and falls back to `modifiedDataSource`.
+- `getSearchResults()`
+  - Escapes special regex characters and builds a case-insensitive regex.
+  - For each language, builds a new `Translations` object containing only keys/values that match either the key or the HTML value.
+  - Returns an array with the same length and language ordering as `modifiedDataSource`.
 
-### 4.5 Sorting
+### 6.2 Sorting
 
-- `cycleSortState(columnIndex)` (lines 450–462)
-  - Cycles sort state for one column: none → `'asc'` → `'desc'` → none.
-  - Stores state in `state.sortState` and re-renders.
-- `applySortingToKeys(keys)` (lines 215–239)
-  - Reads the first (and only) key from `state.sortState`.
-  - Uses `modifiedDataSource[columnIndex].Translations[key]` and `getTextFromHTML` for comparison.
-  - Returns a new array of sorted keys.
+- Each language header contains a clickable `sort-indicator`.
+- Clicking the indicator calls `cycleSortState(columnIndex)` which cycles that column through: no sort → ascending → descending → no sort (and clears other columns).
+- `renderTableBody` calls `applySortingToKeys(allKeys)`:
+  - Uses `modifiedDataSource[columnIndex].Translations[key]` as the value source.
+  - Strips HTML tags with `getTextFromHTML` for text-based comparison.
 
-### 4.6 Column Collapse
+### 6.3 Column collapse
 
-- `toggleColumnCollapse(columnIndex)` (lines 441–447)
-  - Adds/removes `columnIndex` from `state.collapsedColumns`.
-  - Calls `renderTable()`.
-  - Header and body rendering check `state.collapsedColumns` to add CSS classes for collapsed state.
+- Each language header also has a `collapse-indicator`.
+- Clicking it toggles the column index in `state.collapsedColumns` via `toggleColumnCollapse(index)` and re-renders.
+- Collapsed columns remain in the data model but are visually compressed in the UI.
 
-### 4.7 Pagination
+### 6.4 Pagination
 
-- `renderPaginationInfo(totalRows)` (lines 533–546)
-  - Displays "Showing X–Y of Z entries" or "No entries to display".
-- `renderPaginationControls(totalPages)` (lines 548–577)
-  - Clears page buttons container.
-  - Uses `getPageNumbers(currentPage, totalPages)` to decide which page numbers and ellipses to show.
-- `getPageNumbers(currentPage, totalPages)` (lines 580–625)
-  - Implements a smart windowing algorithm around the current page with ellipses.
-- `updatePaginationButtons(totalPages)` (lines 628–634)
-  - Disables/enables prev/next buttons depending on `currentPage`.
-- `goToPage(page)` (lines 636–654)
-  - Validates page number against total pages computed from current data and `rowsPerPage`.
-  - Exits edit mode if active.
-  - Sets `state.pagination.currentPage` and re-renders.
-- `handleRowsPerPageChange(e)` (lines 656–667)
-  - Parses rows-per-page value, exits edit mode, sets `rowsPerPage`, resets `currentPage` to 1, and re-renders.
-
-### 4.8 UI Helpers
-
-- `updateUI()` (lines 485–493)
-  - Shows/hides unsaved-changes notification and discard button based on `state.hasUnsavedChanges`.
-- `handleDocumentClick(e)` (lines 495–503)
-  - If a click occurs outside the currently edited cell, exits edit mode and discards changes.
+- Pagination state lives under `state.pagination`.
+- `renderPagination(totalRows)` computes total pages and delegates to:
+  - `renderPaginationInfo(totalRows)` – updates the “Showing X–Y of Z entries” label.
+  - `renderPaginationControls(totalPages)` – builds numbered page buttons with ellipses using `getPageNumbers(currentPage, totalPages)`.
+  - `updatePaginationButtons(totalPages)` – enables/disables Prev/Next.
+- `goToPage(page)` validates the requested page, closes the modal if open, updates `currentPage`, and calls `renderTable()`.
+- `handleRowsPerPageChange` closes the modal (if needed), updates `rowsPerPage`, resets `currentPage` to 1, and re-renders.
 
 ---
 
-## 5. Key Implementation Details & Rationale
+## 7. Development setup & running locally
 
-### 5.1 Why `modifiedDataSource` Indices Are Always Used for Column Mapping
+Prerequisites:
 
-- Headers and body both iterate over `modifiedDataSource` to render columns.
-- Search returns a **parallel array** (same length and indices), but with filtered `Translations` maps.
-- Sorting (`applySortingToKeys`) reads from `modifiedDataSource[columnIndex]` even when the table shows search results.
-- This avoids misalignment when search/filter changes which keys are visible; the physical columns always correspond to the same language index.
+- Any modern browser (Chrome, Firefox, Edge, Safari).
+- Optional: a simple static HTTP server for local development.
 
-### 5.2 Single Active Edit Cell
+To run locally:
 
-- `state.currentEditCell` ensures only one cell is editable at a time.
-- `handleCellClick`:
-  - No-op if clicking the same cell already being edited.
-  - Otherwise exits the existing edit (via `exitEditMode(true)`), re-renders, and then enters edit mode in the newly clicked cell.
-- `handleDocumentClick` exits edit mode when clicking outside the active cell.
+1. Open `index.html` directly in a browser **or** serve the directory via a static server (e.g., `python -m http.server` in the repo root) and visit `http://localhost:8000/index.html`.
+2. Verify that:
+   - The table renders with the sample `originalDataSource` from `index.html`.
+   - Clicking a value cell opens the Quill modal and edits persist in the table until reload or discard.
 
-This design simplifies DOM management and prevents inconsistent partial edits.
+To embed in another project:
 
-### 5.3 Search, Sorting, and Pagination Interaction
-
-- Search and sorting are mutually exclusive:
-  - When `performSearch` sets `isSearchActive` to true, it also clears `sortState`.
-  - Sorting can then be re-enabled by clicking a column header after search, which uses the currently visible keys.
-- Pagination always operates on the set of keys produced from the current `dataToRender`:
-  - When search is active, `getAllKeys` and pagination are applied to the filtered set.
-  - When search is cleared, they apply to all keys from `modifiedDataSource`.
-- Whenever search query or rows per page change, `currentPage` is reset to 1 to avoid empty pages.
-
-### 5.4 Debounce Pattern for Search
-
-- `handleSearchInput` uses `setTimeout` and `clearTimeout` with `state.searchDebounceTimer`:
-  - Delays invocation of `performSearch` by 300ms after the user stops typing.
-  - Prevents excessive re-renders on every keystroke.
-
-### 5.5 Page Number Windowing Algorithm with Ellipsis
-
-Implemented in `getPageNumbers(currentPage, totalPages)`:
-
-- If `totalPages <= 7`, all page numbers are shown.
-- Otherwise:
-  - Always show page `1` and `totalPages`.
-  - Compute a sliding window around the current page (size `windowSize = 2`).
-  - When near the start or end, the window expands to keep a sensible number of visible pages.
-  - Ellipses (`'...'`) are inserted when there is a gap between the first page and window start, or between window end and last page.
-
-This gives a compact, user-friendly pagination bar.
+1. Copy or include `styles.css`, `language-table.js`, and the `quilljs/` assets into your web app.
+2. Render markup equivalent to the contents of `index.html`’s `<body>` (container, toolbar, table, pagination, hidden form, and modal).
+3. Ensure your server emits a compatible `originalDataSource` JS variable before `language-table.js` is loaded.
+4. Wire your own Save button to call `submitTranslations()`.
 
 ---
 
-## 6. Adding New Features
+## 8. Testing
 
-### 6.1 Adding New State
+There are **no automated tests** in this repository.
 
-- Add new fields to the `state` object at the top of the file.
-- Prefer primitives and small objects; if you need complex derived data, compute it in rendering functions instead.
-- If new state affects multiple UI areas, document it in this guide and ensure it is reset appropriately when discarding changes or resetting the table.
+Recommended manual checks after changes:
 
-### 6.2 Triggering Re-renders Correctly
+- Load with a realistic `originalDataSource` and verify:
+  - Search filters by key and value as expected.
+  - Sorting a column orders rows alphabetically by visible text.
+  - Collapsing a column hides its content but does not break editing.
+  - Pagination works with large datasets (Prev/Next, numbered pages, rows-per-page selector).
+  - Editing translations via the modal updates `modifiedDataSource` and sets the unsaved-changes notification.
+  - Discarding changes resets the table to the original data.
 
-- **Any time visible data or state changes**, call `renderTable()`.
-- When the change affects unsaved status, call `updateUI()` as well.
-- Avoid partial DOM manipulation outside the existing rendering functions; instead, update state and re-render.
-
-### 6.3 Integrating with Existing Event Listeners
-
-- Add new listeners in `initializeEventListeners()` or a dedicated initializer (similar to `initializePaginationListeners`).
-- Guard against multiple initializations using `state.initialized` or a dedicated flag if needed.
-- In the event handler:
-  - Exit edit mode first if the action will change which cells/rows are visible.
-  - Update relevant `state` properties.
-  - Call `renderTable()` and, if appropriate, `updateUI()`.
-
-### 6.4 Common Patterns to Follow
-
-- **Exit edit mode before major state changes**
-  - For operations that re-calculate keys, pages, or rows (search, pagination, discard changes, rows-per-page change), always call `exitEditMode(true)` first if `state.currentEditCell` is not null.
-- **Use `modifiedDataSource` as the canonical data source**
-  - Do not rely on DOM contents for data; always read/write translations through `modifiedDataSource`.
-- **Deep clone when resetting from `originalDataSource`**
-  - Use `JSON.parse(JSON.stringify(...))` as done in `initializeData` and `handleDiscardChanges` to avoid accidental shared references.
-- **Reset pagination on data-shape changes**
-  - When the effective set of keys changes (e.g., search or rows-per-page change), reset `currentPage` to `1`.
-
-### 6.5 Example: Adding a New Global Filter
-
-When implementing a new filter (e.g., show only keys missing in some language):
-
-1. Add a new property on `state` (e.g., `state.showMissingOnly = false`).
-2. Add UI controls and wire them to a new handler in `initializeEventListeners()`.
-3. In the handler:
-   - Exit edit mode if active.
-   - Update `state.showMissingOnly`.
-   - Reset `state.pagination.currentPage = 1`.
-   - Call `renderTable()`.
-4. In `renderTable()` or in a new helper, derive the `dataToRender` (for example, by wrapping `getSearchResults()` with additional filtering).
+If you introduce significant new behavior, consider adding your own test harness or integrating into your existing test framework.
 
 ---
 
-## 7. Common Gotchas & Best Practices
+## 9. Code organization & conventions
 
-- **Always use `modifiedDataSource` for column indexing.**
-  - Do not rely on filtered/search arrays for column positions.
-  - Headers, body, and sorting all assume `modifiedDataSource[index]` defines the Nth column.
-- **Always exit edit mode before major state changes.**
-  - Before search, pagination changes, discarding changes, or changing rows-per-page, call `exitEditMode(true)` if `state.currentEditCell` is set.
-  - This prevents stale references to DOM elements and inconsistent UI.
-- **Deep clone when resetting from `originalDataSource`.**
-  - Avoid mutating `originalDataSource` or shallow-copying it.
-  - Use the same deep-cloning approach as `initializeData` and `handleDiscardChanges`.
-- **Reset pagination to page 1 when data changes.**
-  - Search, changing rows-per-page, or any operation that changes the set of keys should reset `state.pagination.currentPage`.
-- **Remember to call `updateUI()` when changing `hasUnsavedChanges`.**
-  - If you add new flows that change `hasUnsavedChanges`, ensure `updateUI()` is called so the notification and discard button remain in sync.
-- **Be careful with HTML content in translations.**
-  - `renderTableBody` assigns `valueCell.innerHTML = value`, so translations may contain HTML.
-  - Sorting uses `getTextFromHTML` to compare textual content.
-  - When editing, the raw HTML string is shown in the textarea.
-- **Search uses regex under the hood.**
-  - User input is escaped to form a literal regex, but malformed patterns still might throw; these are caught and logged, and the code falls back to showing all results.
-- **Avoid directly manipulating DOM outside rendering functions.**
-  - For consistency, treat the table as derived from `state`/`modifiedDataSource`, and change those instead.
+- The script uses **plain functions and a single `state` object** instead of classes or frameworks.
+- Sections in `language-table.js` are separated by banner comments (GLOBAL STATE, INITIALIZATION, TABLE RENDERING, EDIT MODE, SEARCH, SORTING, DISCARD CHANGES, UI UPDATES, PAGINATION).
+- All DOM queries use `document.getElementById` or simple selectors; the DOM is re-rendered on each relevant state change via `renderTable()`.
+- `modifiedDataSource` is treated as the single source of truth for translation data; the DOM is considered a **view**, not a data store.
+- New features should generally follow this pattern:
+  1. Extend `state` if you need to track additional UI flags.
+  2. Update `renderTable` / helpers to respect the new state.
+  3. Add event listeners in `initializeEventListeners()` or a dedicated initializer.
+  4. Mutate `state` / `modifiedDataSource` in handlers, then call `renderTable()` (and `updateUI()` if unsaved state changed).
 
 ---
-
-By understanding these architectural decisions and patterns, you should be able to safely extend `language-table.js`, implement new behavior, and debug issues in the table UI without introducing subtle state or rendering bugs.
-
