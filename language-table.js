@@ -23,7 +23,7 @@ const state = {
     pagination: {
         currentPage: 1,
         rowsPerPage: 25,
-        rowsPerPageOptions: [25, 50, 100]
+        rowsPerPageOptions: [25, 50, 100, 200]
     },
 
     // Editor state
